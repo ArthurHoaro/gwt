@@ -124,6 +124,24 @@ assert_rc 0 "init: runs from inside a worktree"
 assert_exists "$repo/.gwtrc" "init: writes to the main checkout, not the worktree"
 assert_missing "$wt/.gwtrc" "init: leaves no .gwtrc in the worktree"
 
+# Answers are trimmed, so a stray space does not end up in the step.
+cd "$repo"
+run_gwt_in "$(answers '   npm install   ' '  package-lock.json  ' '' '' '' 'y')" init --force
+rc="$(<$repo/.gwtrc)"
+[[ "$rc" == *"gwt_step deps --watch package-lock.json -- npm install"$'\n'* ]] \
+  && _ok "init: trims whitespace around an answer" || _fail "init: trims whitespace around an answer" "$rc"
+
+# A command that is not runnable is worth a word, but never blocks.
+run_gwt_in "$(answers 'gwt-no-such-binary install' '' '' '' '' 'y')" init --force
+assert_rc 0 "init: an unrunnable command is not a refusal"
+assert_err_has "gwt-no-such-binary is not on your PATH" "init: says the command is not on PATH"
+
+# Nothing may colour output that is not going to a terminal: gwt init has to stay
+# usable from a script, and an escape byte in the transcript would break that.
+[[ "$GWT_ERR" != *$'\e'* ]] \
+  && _ok "init: emits no escape codes when stderr is not a terminal" \
+  || _fail "init: emits no escape codes when stderr is not a terminal" "found an escape in the output"
+
 # A user-level rc is not silently shadowed without a word.
 rm "$repo/.gwtrc"
 write_user_rc "$repo" 'gwt_setup() { : }'

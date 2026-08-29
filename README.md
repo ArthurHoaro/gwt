@@ -72,9 +72,13 @@ drifted, but a directory the worktree already has is left alone unless you pass
 ## Setup hooks
 
 `gwt init` writes the `.gwtrc` for you. It reads the repo first — package manager,
-lockfile, dev script and the port baked into it — and offers those as the defaults,
-so on a typical project it is four presses of Enter. Nothing is written until it has
-shown you the file it is about to write. `--force` rewrites one that already exists.
+lockfile, dev script and the port baked into it — and arrives with those already
+filled in and editable in place, so accepting a default and correcting one cost the
+same. Nothing is written until it has shown you the finished file. `--force`
+rewrites one that already exists.
+
+Answers piped in work too: with no terminal to edit on, the defaults come back as
+bracketed hints and colour is dropped, so it stays usable from a script.
 
 Or write it by hand. A `.gwtrc` at the repo root says what should happen when a
 worktree is created:
