@@ -52,10 +52,22 @@ print -r -- '{"v":2}' > "$wt/package-lock.json"
 run_gwt setup
 assert_eq 2 "$(grep -c ran $log)" "gwt_step: reruns when the watched file changes"
 
+print -r -- '{"v":3}' > "$wt/package-lock.json"
 run_gwt setup --force
 assert_eq 3 "$(grep -c ran $log)" "gwt_step: --force ignores the cache"
 run_gwt setup
 assert_eq 3 "$(grep -c ran $log)" "gwt_step: --force still records the new hash"
+
+# npm rewrites the very lockfile it is watched on, so the state to record is what
+# the command left behind, not what was there before it ran
+: > $log
+print -r -- v1 > "$wt/lock.txt"
+write_gwtrc "$repo" \
+  'gwt_setup() { gwt_step rewrite --watch lock.txt -- sh -c "echo ran >> '"$log"'; echo rewritten > lock.txt" }'
+run_gwt setup
+assert_eq 1 "$(grep -c ran $log)" "gwt_step: runs a step that rewrites what it watches"
+run_gwt setup
+assert_eq 1 "$(grep -c ran $log)" "gwt_step: records the state the command left behind"
 
 # state lives in the worktree's own git dir, so git removes it with the worktree
 state="$(git -C "$wt" rev-parse --absolute-git-dir)/gwt-state"
