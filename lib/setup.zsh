@@ -82,7 +82,8 @@ function _gwt_run_hook {
       "gwt_$kind"
     else
       local var="GWT_${kind:u}"
-      [[ -n "${(P)var}" ]] && eval "${(P)var}"
+      [[ -n "${(P)var}" ]] || exit 0
+      eval "${(P)var}"
     fi
   )
 }

@@ -50,6 +50,10 @@
 #  70   prune: one or more worktrees failed to remove
 #  71   go: no worktrees to choose from
 #  72   prune: no criteria given, or no default branch
+#  80   init: .gwtrc already exists (use --force)
+#  81   init: git tracks .gwtrc
+#  82   init: cancelled at a prompt
+#  83   init: could not write .gwtrc
 #
 
 # Current branch (empty if detached)
@@ -154,6 +158,7 @@ usage:
   gwt sync [-n] [--force] [<branch>|--all]
                                  # re-carry files from the main checkout into an existing worktree
   gwt include                    # show what a worktree would inherit; changes nothing
+  gwt init [--force]             # wizard: write this repo's .gwtrc; --force overwrites an existing one
   gwt setup [--force]            # re-run this repo's setup hook here; --force ignores the step cache
   gwt serve [stop|restart|status|logs [-f]|open]
                                  # point this repo's single dev server at the current worktree
@@ -272,6 +277,11 @@ usage:
     include)
       _gwt_include_report "$MAIN_ROOT" "$REPO"
       return 0
+      ;;
+
+    init)
+      _gwt_init "$MAIN_ROOT" "$REPO" "$force"
+      return $?
       ;;
 
     setup)

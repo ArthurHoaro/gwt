@@ -16,6 +16,11 @@ cd "$wt"
 run_gwt setup
 assert_rc 0 "setup: succeeds with no .gwtrc"
 
+# a config that sets no hook at all is not a failure
+write_gwtrc "$repo" "# nothing here yet"
+run_gwt setup
+assert_rc 0 "setup: a .gwtrc that defines no hook succeeds"
+
 # the plain string form runs, and keeps running: it has no cache
 write_gwtrc "$repo" "GWT_SETUP='print -r -- string-form >> $log'"
 run_gwt setup

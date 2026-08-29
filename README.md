@@ -23,6 +23,7 @@ gwt list                        list all worktrees for the current repo
 gwt sync [-n] [--force] [<branch>|--all]
                                 re-carry files from the main checkout into an existing worktree
 gwt include                     show what a worktree would inherit; changes nothing
+gwt init [--force]              wizard that writes this repo's .gwtrc
 gwt setup [--force]             re-run this repo's setup hook here
 gwt serve [stop|restart|status|logs [-f]|open]
                                 point this repo's single dev server at the current worktree
@@ -70,7 +71,13 @@ drifted, but a directory the worktree already has is left alone unless you pass
 
 ## Setup hooks
 
-Put a `.gwtrc` at the repo root to say what should happen when a worktree is created:
+`gwt init` writes the `.gwtrc` for you. It reads the repo first — package manager,
+lockfile, dev script and the port baked into it — and offers those as the defaults,
+so on a typical project it is four presses of Enter. Nothing is written until it has
+shown you the file it is about to write. `--force` rewrites one that already exists.
+
+Or write it by hand. A `.gwtrc` at the repo root says what should happen when a
+worktree is created:
 
 ```zsh
 GWT_SERVER='npm run dev'
@@ -170,6 +177,7 @@ gwt.plugin.zsh     entry point; sources lib/*.zsh and registers completion
 lib/gwt.zsh        dispatcher, shared helpers, exit-code table
 lib/config.zsh     .worktreeinclude and .gwtrc resolution
 lib/sync.zsh       carry-over of gitignored files into a fresh worktree
+lib/init.zsh       the 'gwt init' wizard and its stack detection
 lib/setup.zsh      .gwtrc hooks and the gwt_step cache
 lib/server.zsh     the singleton dev server client
 lib/prune.zsh      branch classification for gwt prune

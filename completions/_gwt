@@ -10,6 +10,7 @@ subcmds=(
   'list:list all worktrees'
   'sync:re-carry files from the main checkout into an existing worktree'
   'include:show what a worktree would inherit (changes nothing)'
+  'init:wizard that writes the .gwtrc for this repo'
   'setup:re-run the setup hook in this worktree'
   'serve:point the single dev server at the current worktree'
   'prune:remove worktrees whose branch is merged or gone on origin'
@@ -66,6 +67,9 @@ case "$subcmd" in
     else
       _arguments -s '(-f --force)'{-f,--force}'[follow the log output]'
     fi
+    ;;
+  init)
+    _arguments -s '(-f --force)'{-f,--force}'[overwrite an existing .gwtrc]'
     ;;
   setup)
     _arguments -s '(-f --force)'{-f,--force}'[ignore the step cache and run every step]'
