@@ -1,0 +1,53 @@
+#compdef gwt
+
+local -a subcmds
+subcmds=(
+  'add:create worktree and cd into it'
+  'go:cd into worktree (create if needed)'
+  'rm:remove worktree'
+  'checkout:checkout a branch here (-f force-removes the worktree holding it)'
+  'reset:cd back to main repo root (-d also removes the worktree)'
+  'list:list all worktrees'
+)
+
+if (( CURRENT == 2 )); then
+  _describe 'command' subcmds
+  return
+fi
+
+local -a wt_branches
+local subcmd="${words[2]}"
+
+case "$subcmd" in
+  add)
+    _arguments -s \
+      '-b[start point branch]:start branch:__git_branch_names' \
+      ':branch name:'
+    ;;
+  go)
+    wt_branches=( ${(f)"$(
+      git worktree list --porcelain 2>/dev/null \
+        | awk '/^branch refs\/heads\//{print substr($0,19)}'
+    )"} )
+    _arguments -s \
+      '-b[start point branch]:start branch:__git_branch_names' \
+      ":branch name:(${wt_branches[*]})"
+    ;;
+  checkout|co)
+    _arguments -s \
+      '(-f --force)'{-f,--force}'[remove any worktree holding the branch first]' \
+      ':branch name:__git_branch_names'
+    ;;
+  reset)
+    _arguments -s '(-d --delete)'{-d,--delete}'[also remove the worktree you are leaving]'
+    ;;
+  rm)
+    if (( CURRENT == 3 )); then
+      wt_branches=( ${(f)"$(
+        git worktree list --porcelain 2>/dev/null \
+          | awk '/^branch refs\/heads\//{print substr($0,19)}'
+      )"} )
+      (( ${#wt_branches} )) && _describe 'worktree branch' wt_branches
+    fi
+    ;;
+esac
