@@ -47,6 +47,9 @@
 #  64   serve: unknown 'gwt serve' subcommand
 #  65   serve: the systemd unit is not installed
 #  66   serve: no server target set yet
+#  70   prune: one or more worktrees failed to remove
+#  71   go: no worktrees to choose from
+#  72   prune: no criteria given, or no default branch
 #
 
 # Current branch (empty if detached)
@@ -62,10 +65,12 @@ function _gwt_checked_out_paths {
   '
 }
 
-# ▶ marks the worktree this repo's dev server is pointed at. Dirtiness compares the
-# index and working tree only: a full status walk over every worktree is too slow here.
-function _gwt_list {
-  local main_root="$1" repo="$2" served wt br dirty counts ahead behind mark
+# One row per worktree: display<TAB>path<TAB>branch. Both the listing and the picker
+# read these, so they can never drift apart.
+# Dirtiness compares the index and working tree only: a full status walk over every
+# worktree is too slow with dozens of them.
+function _gwt_worktree_rows {
+  local main_root="$1" repo="$2" served wt br dirty counts ahead behind mark disp
   served="$(_gwt_server_target "$repo" 2>/dev/null)"
 
   git worktree list --porcelain | awk '
@@ -87,9 +92,33 @@ function _gwt_list {
     ahead="${counts##*[[:space:]]}"
     [[ "$counts" == *[0-9]* ]] || { ahead=0; behind=0 }
 
-    printf '%s %-28s %-26s %s %s%s\n' "$mark" "${wt:t}" "$br" "$dirty" \
-      "$( (( ahead )) && print -rn -- "↑$ahead " )" "$( (( behind )) && print -rn -- "↓$behind" )"
+    disp="$(printf '%s %-28s %-26s %s %s%s' "$mark" "${wt:t}" "$br" "$dirty" \
+      "$( (( ahead )) && print -rn -- "↑$ahead " )" "$( (( behind )) && print -rn -- "↓$behind" )")"
+    printf '%s\t%s\t%s\n' "$disp" "$wt" "$br"
   done
+}
+
+function _gwt_list {
+  local row
+  for row in ${(f)"$(_gwt_worktree_rows "$1" "$2")"}; do
+    print -r -- "${row%%$'\t'*}"
+  done
+}
+
+# fzf when it is there, zsh's select when it is not. Tests replace this wholesale.
+function _gwt_pick {
+  local -a rows=("$@")
+  (( ${#rows} )) || return 1
+  if (( $+commands[fzf] )); then
+    print -rl -- "${rows[@]}" \
+      | fzf --delimiter=$'\t' --with-nth=1 --no-multi --height=40% --reverse --prompt='worktree> '
+    return $?
+  fi
+  local choice
+  select choice in ${rows[@]%%$'\t'*}; do
+    [[ -n "$choice" ]] && { print -r -- "${rows[$REPLY]}"; return 0 }
+  done
+  return 1
 }
 
 unalias gwt 2>/dev/null
@@ -99,7 +128,7 @@ function gwt {
 
   local cmd="$1"; shift
 
-  local branch="" start_point="" delete_tree="" force="" dry_run="" all="" no_setup=""
+  local branch="" start_point="" delete_tree="" force="" dry_run="" all="" no_setup="" merged=""
   while (( $# )); do
     case "$1" in
       -b) (( $# >= 2 )) || { print -r -- "error: -b requires a start point" >&2; return 22; }
@@ -109,6 +138,7 @@ function gwt {
       -n|--dry-run) dry_run=1; shift ;;
       --all) all=1; shift ;;
       --no-setup) no_setup=1; shift ;;
+      --merged) merged=1; shift ;;
        *) branch="$1"; shift ;;
     esac
   done
@@ -127,6 +157,7 @@ usage:
   gwt setup [--force]            # re-run this repo's setup hook here; --force ignores the step cache
   gwt serve [stop|restart|status|logs [-f]|open]
                                  # point this repo's single dev server at the current worktree
+  gwt prune --merged [-n] [-f]   # remove worktrees whose branch is merged or gone on origin
 "
 
   if [[ -z "$cmd" ]]; then
@@ -150,6 +181,80 @@ usage:
   case "$cmd" in
     list)
       _gwt_list "$MAIN_ROOT" "$REPO"
+      return 0
+      ;;
+
+    prune)
+      [[ -n "$merged" ]] || {
+        print -r -- "usage: gwt prune --merged [-n] [-f]   # -n previews, -f skips the prompt" >&2
+        return 72
+      }
+
+      git fetch --prune "$REMOTE" >/dev/null 2>&1 \
+        || print -r -- "note: fetch failed; classifying from local refs only" >&2
+
+      local default
+      default="$(_gwt_default_branch)" || {
+        print -r -- "error: cannot determine the default branch" >&2
+        return 72
+      }
+
+      local here_real cb
+      here_real="$(pwd -P)"
+      cb="$(_gwt_current_branch)"
+
+      local -a candidates skipped
+      local row b wt reason wt_real
+      for row in ${(f)"$(_gwt_prune_candidates "$MAIN_ROOT" "$default")"}; do
+        b="${row%%$'\t'*}"
+        wt="${${row#*$'\t'}%%$'\t'*}"
+        reason="${row##*$'\t'}"
+        wt_real="$wt"
+        [[ -d "$wt" ]] && wt_real="$(cd "$wt" && pwd -P)"
+        if [[ "$here_real/" == "$wt_real/"* || "$cb" == "$b" ]]; then
+          skipped+=( "$b (you are in it)" )
+          continue
+        fi
+        candidates+=( "$row" )
+      done
+
+      for row in "${skipped[@]}"; do
+        print -r -- "  skip    $row" >&2
+      done
+
+      (( ${#candidates} )) || { print -r -- "nothing to prune" >&2; return 0 }
+
+      for row in "${candidates[@]}"; do
+        printf '  remove  %-30s %s\n' "${row%%$'\t'*}" "${row##*$'\t'}" >&2
+      done
+
+      [[ -n "$dry_run" ]] && {
+        print -r -- "would remove ${#candidates} worktree(s)" >&2
+        return 0
+      }
+
+      if [[ -z "$force" ]]; then
+        print -rn -- "remove ${#candidates} worktree(s)? [y/N] " >&2
+        local reply=""
+        read -r reply || reply=""
+        [[ "$reply" == [yY]* ]] || { print -r -- "aborted" >&2; return 0 }
+      fi
+
+      local -i removed=0 failed=0
+      for row in "${candidates[@]}"; do
+        b="${row%%$'\t'*}"
+        if gwt rm "$b"; then
+          (( removed++ ))
+        else
+          print -r -- "error: could not remove '$b'" >&2
+          (( failed++ ))
+        fi
+      done
+      if (( failed )); then
+        print -r -- "pruned $removed worktree(s), $failed failed" >&2
+        return 70
+      fi
+      print -r -- "pruned $removed worktree(s)" >&2
       return 0
       ;;
 
@@ -239,8 +344,22 @@ usage:
       ;;
 
     add|go)
-      [[ -z "$branch" ]] && { print -r -- "$usage" >&2; return 4; }
       local setup_rc=0
+
+      # bare `gwt go` is a picker over the worktrees that already exist
+      if [[ "$cmd" == "go" && -z "$branch" ]]; then
+        local -a rows
+        rows=( ${(f)"$(_gwt_worktree_rows "$MAIN_ROOT" "$REPO")"} )
+        (( ${#rows} )) || { print -r -- "error: no worktrees to choose from" >&2; return 71 }
+        local picked dest
+        picked="$(_gwt_pick "${rows[@]}")" || return 0
+        [[ -n "$picked" ]] || return 0
+        dest="${${picked#*$'\t'}%%$'\t'*}"
+        cd "$dest" || { print -r -- "error: failed to cd to $dest" >&2; return 5; }
+        return 0
+      fi
+
+      [[ -z "$branch" ]] && { print -r -- "$usage" >&2; return 4; }
 
       # 🧹 prune stale metadata first
       git worktree prune >/dev/null 2>&1 || true

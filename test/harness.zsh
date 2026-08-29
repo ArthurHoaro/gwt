@@ -83,6 +83,27 @@ mk_unmerged_branch() {
   git -C "$repo" worktree remove "$stage"
 }
 
+# A branch whose upstream has been deleted on the remote.
+mk_gone_branch() {
+  local repo="$1" name="$2" stage="$GWT_TEST_ROOT/.stage-gone"
+  git -C "$repo" worktree add -q -b "$name" "$stage" main
+  print -r -- work > "$stage/$name.txt"
+  git -C "$stage" add -A
+  git -C "$stage" commit -qm "work on $name"
+  git -C "$stage" push -q -u origin "$name"
+  git -C "$repo" worktree remove "$stage"
+  git -C "$repo" push -q origin --delete "$name"
+  git -C "$repo" fetch -q --prune origin
+}
+
+run_gwt_in() {
+  local input="$1"; shift
+  gwt "$@" >"$GWT_TEST_ROOT/.stdout" 2>"$GWT_TEST_ROOT/.stderr" <<<"$input"
+  GWT_RC=$?
+  GWT_OUT="$(<"$GWT_TEST_ROOT/.stdout")"
+  GWT_ERR="$(<"$GWT_TEST_ROOT/.stderr")"
+}
+
 wt_path() { print -r -- "$GWT_BASE/${1:t}/wt-$2" }
 
 # Gitignored state a worktree might inherit: two config files, a heavy dep dir,

@@ -140,6 +140,9 @@ print -r -- "$GWT_OUT" | grep -q "▶ .*${wt2:t}" \
 print -r -- "$GWT_OUT" | grep -q "^  .*${repo:t}" \
   && _ok "list: leaves other rows unmarked" \
   || _fail "list: leaves other rows unmarked" "got: ${GWT_OUT//$'\n'/ | }"
+[[ "$GWT_OUT" == *"$wt2"* ]] \
+  && _fail "list: shows names, not raw paths" "the full worktree path leaked into the display" \
+  || _ok "list: shows names, not raw paths"
 
 # dirty column
 print -r -- "changed" >> "$wt2/README"

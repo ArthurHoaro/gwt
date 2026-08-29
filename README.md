@@ -26,7 +26,11 @@ gwt include                     show what a worktree would inherit; changes noth
 gwt setup [--force]             re-run this repo's setup hook here
 gwt serve [stop|restart|status|logs [-f]|open]
                                 point this repo's single dev server at the current worktree
+gwt prune --merged [-n] [-f]    remove worktrees whose branch is merged or gone on origin
 ```
+
+`gwt go` with no branch opens a picker over the worktrees that already exist — fzf if
+you have it, a numbered menu if you do not.
 
 `GWT_BASE` sets where worktrees live. The remote is `origin`.
 
@@ -97,6 +101,18 @@ removes it; it can never block the removal. Resolution is `<repo>/.gwtrc`, then
 tracked config would run code from every `git pull`. Keep it untracked — gwt adds it
 to `.git/info/exclude` for you.
 
+## Pruning
+
+`gwt prune --merged` removes every worktree whose branch is either merged into the
+default branch or tracking an upstream that no longer exists on origin. It fetches
+first, prints what it intends to remove with the reason, and asks before doing
+anything; `-n` previews without prompting and `-f` skips the prompt.
+
+Each removal goes through `gwt rm`, so everything that command refuses, it still
+refuses: the worktree you are standing in is skipped rather than failed, an unmerged
+branch keeps its branch after the worktree goes, teardown hooks run, and a dev server
+pointed at a removed tree is stopped first.
+
 ## Dev server
 
 One server per repo, retargetable at any worktree, supervised by systemd. It never
@@ -156,6 +172,7 @@ lib/config.zsh     .worktreeinclude and .gwtrc resolution
 lib/sync.zsh       carry-over of gitignored files into a fresh worktree
 lib/setup.zsh      .gwtrc hooks and the gwt_step cache
 lib/server.zsh     the singleton dev server client
+lib/prune.zsh      branch classification for gwt prune
 completions/_gwt   zsh completion
 libexec/           gwt-serve-run, the systemd ExecStart target
 systemd/           the gwt-server@.service template

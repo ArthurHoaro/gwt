@@ -12,6 +12,7 @@ subcmds=(
   'include:show what a worktree would inherit (changes nothing)'
   'setup:re-run the setup hook in this worktree'
   'serve:point the single dev server at the current worktree'
+  'prune:remove worktrees whose branch is merged or gone on origin'
 )
 
 if (( CURRENT == 2 )); then
@@ -45,6 +46,12 @@ case "$subcmd" in
     ;;
   reset)
     _arguments -s '(-d --delete)'{-d,--delete}'[also remove the worktree you are leaving]'
+    ;;
+  prune)
+    _arguments -s \
+      '--merged[select branches merged into the default branch or gone on origin]' \
+      '(-n --dry-run)'{-n,--dry-run}'[preview without removing anything]' \
+      '(-f --force)'{-f,--force}'[skip the confirmation prompt]'
     ;;
   serve)
     if (( CURRENT == 3 )); then
