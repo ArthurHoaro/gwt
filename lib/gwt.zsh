@@ -236,7 +236,13 @@ usage:
       if [[ -z "$force" ]]; then
         print -rn -- "remove ${#candidates} worktree(s)? [y/N] " >&2
         local reply=""
-        read -r reply || reply=""
+        # Wait indefinitely for a person, but never hang a script: a pipe that never
+        # delivers would otherwise block this destructive command forever.
+        if [[ -t 0 ]]; then
+          read -r reply || reply=""
+        else
+          read -t 5 -r reply || reply=""
+        fi
         [[ "$reply" == [yY]* ]] || { print -r -- "aborted" >&2; return 0 }
       fi
 

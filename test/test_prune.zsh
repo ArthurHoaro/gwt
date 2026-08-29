@@ -38,6 +38,14 @@ assert_rc 0 "prune: declining is not an error"
 assert_err_has "aborted" "prune: says it aborted"
 assert_exists "$wt_merged" "prune: declining removes nothing"
 
+# a non-interactive caller with nothing on stdin aborts instead of hanging
+mk_branch "$repo" merged-z
+wt_z="$(mk_worktree "$repo" merged-z)"
+gwt prune --merged >/dev/null 2>&1 </dev/null
+assert_eq 0 "$?" "prune: EOF on stdin is not an error"
+assert_exists "$wt_z" "prune: EOF on stdin removes nothing"
+git -C "$repo" worktree remove "$wt_z"
+
 # accepting it
 run_gwt_in y prune --merged
 assert_rc 0 "prune: succeeds"
@@ -76,6 +84,29 @@ assert_err_has "you are in it" "prune: says why it skipped"
 cd "$repo"
 assert_exists "$repo/README" "prune: main checkout untouched"
 assert_branch "$repo" main "prune: default branch untouched"
+
+# Both exclusions matter only when the main checkout is NOT on the default branch:
+# a repo sitting on a feature branch with the default branch in a linked worktree.
+repo3="$(mk_repo third)"
+cd "$repo3"
+mk_branch "$repo3" side-a
+git -C "$repo3" checkout -q side-a
+wt_default="$(mk_worktree "$repo3" main)"
+# Stand somewhere that is not a candidate, so neither exclusion is masked by the
+# "you are in it" skip.
+mk_unmerged_branch "$repo3" neutral
+wt_neutral="$(mk_worktree "$repo3" neutral)"
+cd "$wt_neutral"
+run_gwt prune --merged -n
+assert_rc 0 "prune: succeeds with the default branch in a worktree"
+[[ "$GWT_ERR" == *"remove  side-a"* ]] \
+  && _fail "prune: never lists the main checkout" "side-a, the main checkout, was listed" \
+  || _ok "prune: never lists the main checkout"
+[[ "$GWT_ERR" == *"remove  main"* ]] \
+  && _fail "prune: never lists the default branch worktree" "main was listed" \
+  || _ok "prune: never lists the default branch worktree"
+assert_exists "$wt_default" "prune: the default branch worktree survives"
+assert_exists "$repo3/README" "prune: the main checkout survives"
 
 cd /
 gwt_test_done
