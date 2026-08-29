@@ -27,6 +27,19 @@ gwt list                        list all worktrees for the current repo
 Creating a worktree copies gitignored files (`.env`, local config, …) from the main
 checkout, skipping heavy regenerable directories like `node_modules` and build output.
 
+## Tests
+
+```zsh
+zsh test/run.zsh
+```
+
+Coverage is deliberately narrow: the destructive paths only — `rm`, `checkout -f`,
+and `reset -d`, the ones that call `git worktree remove --force` and `git branch -d`.
+Every test builds throwaway repos in a temp dir; the harness refuses to run at all
+unless its sandbox is a directory it created itself under a temp root.
+
+`GWT_TEST_KEEP=1` leaves the sandbox behind for inspection.
+
 ## Layout
 
 ```
@@ -34,6 +47,7 @@ gwt.plugin.zsh     entry point; sources lib/*.zsh and registers completion
 lib/gwt.zsh        dispatcher, shared helpers, exit-code table
 lib/sync.zsh       carry-over of gitignored files into a fresh worktree
 completions/_gwt   zsh completion
+test/              destructive-path tests (harness.zsh, run.zsh, test_*.zsh)
 ```
 
 Exit codes are documented at the top of `lib/gwt.zsh`.
