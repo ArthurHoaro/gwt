@@ -98,5 +98,20 @@ run_gwt sync
 assert_rc 0 "sync: works from inside a worktree"
 assert_exists "$wt/.env" "sync: carried into the worktree you stand in"
 
+# Carry-over on create must not clobber. A branch can track a file that main only
+# has as an untracked copy; the checked-out version wins.
+stage="$GWT_TEST_ROOT/.stage2"
+git -C "$repo" worktree add -q -b tracked-env "$stage" main
+print -r -- "BRANCH_ENV" > "$stage/.env"
+git -C "$stage" add -f .env
+git -C "$stage" commit -qm "commit env on the branch"
+git -C "$repo" worktree remove "$stage"
+cd "$repo"
+run_gwt add tracked-env
+assert_rc 0 "add: succeeds for a branch that tracks .env"
+wt3="$(wt_path "$repo" tracked-env)"
+assert_content "$wt3/.env" BRANCH_ENV "add: does not clobber a file the branch tracks"
+assert_exists "$wt3/node_modules/pkg/p.js" "add: still carries the rest"
+
 cd /
 gwt_test_done
