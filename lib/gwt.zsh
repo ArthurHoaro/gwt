@@ -38,6 +38,8 @@
 #  41   sync: no worktree found for that branch
 #  42   sync: one or more paths failed to carry
 #  43   sync: --all takes no branch argument
+#  50   setup: refusing to source a .gwtrc that git tracks
+#  51   setup: hook returned non-zero
 #
 
 # Current branch (empty if detached)
@@ -60,7 +62,7 @@ function gwt {
 
   local cmd="$1"; shift
 
-  local branch="" start_point="" delete_tree="" force="" dry_run="" all=""
+  local branch="" start_point="" delete_tree="" force="" dry_run="" all="" no_setup=""
   while (( $# )); do
     case "$1" in
       -b) (( $# >= 2 )) || { print -r -- "error: -b requires a start point" >&2; return 22; }
@@ -69,6 +71,7 @@ function gwt {
       -f|--force) force=1; shift ;;
       -n|--dry-run) dry_run=1; shift ;;
       --all) all=1; shift ;;
+      --no-setup) no_setup=1; shift ;;
        *) branch="$1"; shift ;;
     esac
   done
@@ -84,6 +87,7 @@ usage:
   gwt sync [-n] [--force] [<branch>|--all]
                                  # re-carry files from the main checkout into an existing worktree
   gwt include                    # show what a worktree would inherit; changes nothing
+  gwt setup [--force]            # re-run this repo's setup hook here; --force ignores the step cache
 "
 
   if [[ -z "$cmd" ]]; then
@@ -113,6 +117,14 @@ usage:
     include)
       _gwt_include_report "$MAIN_ROOT" "$REPO"
       return 0
+      ;;
+
+    setup)
+      local here
+      here="$(git rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
+      [[ -n "$here" ]] || { print -r -- "error: not in a worktree" >&2; return 2 }
+      _gwt_run_setup "$MAIN_ROOT" "$REPO" "$here" "$(_gwt_current_branch)" "$force"
+      return $?
       ;;
 
     sync)
@@ -183,6 +195,7 @@ usage:
 
     add|go)
       [[ -z "$branch" ]] && { print -r -- "$usage" >&2; return 4; }
+      local setup_rc=0
 
       # 🧹 prune stale metadata first
       git worktree prune >/dev/null 2>&1 || true
@@ -222,8 +235,9 @@ usage:
       if git show-ref --verify --quiet "refs/heads/$branch"; then
         git worktree add "$DIR" "$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 10; }
         _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
+        [[ -z "$no_setup" ]] && { _gwt_run_setup "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" || setup_rc=$? }
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 11; }
-        return 0
+        return $setup_rc
       fi
 
       # 🧠 Remote branch exists? create local branch from it + set upstream.
@@ -231,15 +245,17 @@ usage:
         git worktree add -b "$branch" "$DIR" "$REMOTE/$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 12; }
         git -C "$DIR" branch --set-upstream-to="$REMOTE/$branch" "$branch" >/dev/null 2>&1 || true
         _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
+        [[ -z "$no_setup" ]] && { _gwt_run_setup "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" || setup_rc=$? }
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 13; }
-        return 0
+        return $setup_rc
       fi
 
       # Else: create new branch from start_point (or HEAD if omitted)
       git worktree add -b "$branch" "$DIR" ${start_point:+"$start_point"} >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
       _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
+      [[ -z "$no_setup" ]] && { _gwt_run_setup "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" || setup_rc=$? }
       cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 15; }
-      return 0
+      return $setup_rc
       ;;
 
     checkout|co)
@@ -358,6 +374,8 @@ usage:
       fi
 
       [[ -d "$target" ]] || { print -r -- "error: worktree directory not found: $target" >&2; return 19; }
+
+      _gwt_run_teardown "$MAIN_ROOT" "$REPO" "$target" "$branch"
 
       git worktree remove "$target" >/dev/null || { print -r -- "error: git worktree remove failed" >&2; return 20; }
 

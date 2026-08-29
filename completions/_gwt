@@ -10,6 +10,7 @@ subcmds=(
   'list:list all worktrees'
   'sync:re-carry files from the main checkout into an existing worktree'
   'include:show what a worktree would inherit (changes nothing)'
+  'setup:re-run the setup hook in this worktree'
 )
 
 if (( CURRENT == 2 )); then
@@ -33,6 +34,7 @@ case "$subcmd" in
     )"} )
     _arguments -s \
       '-b[start point branch]:start branch:__git_branch_names' \
+      '--no-setup[skip the setup hook]' \
       ":branch name:(${wt_branches[*]})"
     ;;
   checkout|co)
@@ -42,6 +44,9 @@ case "$subcmd" in
     ;;
   reset)
     _arguments -s '(-d --delete)'{-d,--delete}'[also remove the worktree you are leaving]'
+    ;;
+  setup)
+    _arguments -s '(-f --force)'{-f,--force}'[ignore the step cache and run every step]'
     ;;
   sync)
     wt_branches=( ${(f)"$(

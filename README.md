@@ -23,6 +23,7 @@ gwt list                        list all worktrees for the current repo
 gwt sync [-n] [--force] [<branch>|--all]
                                 re-carry files from the main checkout into an existing worktree
 gwt include                     show what a worktree would inherit; changes nothing
+gwt setup [--force]             re-run this repo's setup hook here
 ```
 
 `GWT_BASE` sets where worktrees live. The remote is `origin`.
@@ -60,6 +61,39 @@ On the first real carry, `.worktreeinclude` and `.gwtrc` are added to
 re-runs carry-over into a worktree that already exists — it refreshes files that have
 drifted, but a directory the worktree already has is left alone unless you pass
 `--force`, since that is where installed dependencies live.
+
+## Setup hooks
+
+Put a `.gwtrc` at the repo root to say what should happen when a worktree is created:
+
+```zsh
+GWT_SERVER='npm run dev'
+GWT_SERVER_PORT=9000
+
+gwt_setup() {
+  gwt_step deps --watch package-lock.json --watch .nvmrc -- npm install
+  gwt_step db -- ./bin/seed-branch-db.sh
+}
+```
+
+`gwt add` runs carry-over, then setup, then cds you in. A failing hook still lands you
+in the worktree and returns non-zero, so the failure is visible rather than silent.
+`--no-setup` skips it and `gwt setup` re-runs it on demand.
+
+`gwt_step` skips a step whose watched files are byte-identical to what was there the
+last time it succeeded, and records the new hash only on success. A step with no
+`--watch` always runs. `gwt setup --force` ignores the cache. State lives in the
+worktree's own git directory, which git deletes when the worktree is removed, so the
+cache never outlives what it describes.
+
+Hooks run with `GWT_WORKTREE`, `GWT_BRANCH`, `GWT_MAIN_ROOT` and `GWT_REPO` exported.
+`GWT_TEARDOWN` or a `gwt_teardown()` function runs in a worktree just before `gwt rm`
+removes it; it can never block the removal. Resolution is `<repo>/.gwtrc`, then
+`~/.config/gwt/<repo>/rc`, then `~/.config/gwt/rc`.
+
+**`.gwtrc` is executed as zsh, so gwt refuses to source one that git tracks.** A
+tracked config would run code from every `git pull`. Keep it untracked — gwt adds it
+to `.git/info/exclude` for you.
 
 ## Tests
 

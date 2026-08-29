@@ -101,6 +101,10 @@ mk_carry_fixture() {
   git -C "$repo" commit -qm fixture
 }
 
+write_gwtrc()     { local repo="$1"; shift; printf '%s\n' "$@" > "$repo/.gwtrc" }
+write_user_rc()   { local repo="$1"; shift; mkdir -p "$HOME/.config/gwt/${repo:t}"; printf '%s\n' "$@" > "$HOME/.config/gwt/${repo:t}/rc" }
+write_global_rc() { mkdir -p "$HOME/.config/gwt"; printf '%s\n' "$@" > "$HOME/.config/gwt/rc" }
+
 write_include() { local repo="$1"; shift; printf '%s\n' "$@" > "$repo/.worktreeinclude" }
 
 write_user_include() {
