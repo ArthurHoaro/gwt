@@ -40,6 +40,13 @@
 #  43   sync: --all takes no branch argument
 #  50   setup: refusing to source a .gwtrc that git tracks
 #  51   setup: hook returned non-zero
+#  60   serve: no GWT_SERVER (or GWT_SERVER_PORT) configured
+#  61   serve: not inside a worktree
+#  62   serve: the port is held by a process that is not ours
+#  63   serve: systemctl or the launcher failed
+#  64   serve: unknown 'gwt serve' subcommand
+#  65   serve: the systemd unit is not installed
+#  66   serve: no server target set yet
 #
 
 # Current branch (empty if detached)
@@ -53,6 +60,36 @@ function _gwt_checked_out_paths {
     /^worktree /{wt=substr($0,10)}
     /^branch /{if (substr($0,8)==b) print wt}
   '
+}
+
+# ▶ marks the worktree this repo's dev server is pointed at. Dirtiness compares the
+# index and working tree only: a full status walk over every worktree is too slow here.
+function _gwt_list {
+  local main_root="$1" repo="$2" served wt br dirty counts ahead behind mark
+  served="$(_gwt_server_target "$repo" 2>/dev/null)"
+
+  git worktree list --porcelain | awk '
+    /^worktree /{wt=substr($0,10)}
+    /^branch /{print wt "\t" substr($0,19); wt=""}
+    /^detached/{print wt "\t(detached)"; wt=""}
+  ' | while IFS=$'\t' read -r wt br; do
+    [[ -n "$wt" ]] || continue
+    mark=" "
+    [[ -n "$served" && "$wt" == "$served" ]] && mark="▶"
+
+    dirty=" "
+    git -C "$wt" diff --quiet --ignore-submodules 2>/dev/null \
+      && git -C "$wt" diff --cached --quiet --ignore-submodules 2>/dev/null \
+      || dirty="●"
+
+    counts="$(git -C "$wt" rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null)"
+    behind="${counts%%[[:space:]]*}"
+    ahead="${counts##*[[:space:]]}"
+    [[ "$counts" == *[0-9]* ]] || { ahead=0; behind=0 }
+
+    printf '%s %-28s %-26s %s %s%s\n' "$mark" "${wt:t}" "$br" "$dirty" \
+      "$( (( ahead )) && print -rn -- "↑$ahead " )" "$( (( behind )) && print -rn -- "↓$behind" )"
+  done
 }
 
 unalias gwt 2>/dev/null
@@ -88,6 +125,8 @@ usage:
                                  # re-carry files from the main checkout into an existing worktree
   gwt include                    # show what a worktree would inherit; changes nothing
   gwt setup [--force]            # re-run this repo's setup hook here; --force ignores the step cache
+  gwt serve [stop|restart|status|logs [-f]|open]
+                                 # point this repo's single dev server at the current worktree
 "
 
   if [[ -z "$cmd" ]]; then
@@ -110,8 +149,13 @@ usage:
 
   case "$cmd" in
     list)
-      git worktree list
+      _gwt_list "$MAIN_ROOT" "$REPO"
       return 0
+      ;;
+
+    serve)
+      _gwt_serve "$branch" "$MAIN_ROOT" "$REPO" "$force"
+      return $?
       ;;
 
     include)
@@ -184,6 +228,7 @@ usage:
 
       # Detached HEAD gives `gwt rm` no branch to resolve; remove the path directly.
       if [[ -z "$from_branch" ]]; then
+        _gwt_server_release "$REPO" "$from_wt"
         git worktree remove "$from_wt" >/dev/null || { print -r -- "error: git worktree remove failed" >&2; return 24; }
         git worktree prune >/dev/null 2>&1 || true
         return 0
@@ -375,6 +420,7 @@ usage:
 
       [[ -d "$target" ]] || { print -r -- "error: worktree directory not found: $target" >&2; return 19; }
 
+      _gwt_server_release "$REPO" "$target"
       _gwt_run_teardown "$MAIN_ROOT" "$REPO" "$target" "$branch"
 
       git worktree remove "$target" >/dev/null || { print -r -- "error: git worktree remove failed" >&2; return 20; }

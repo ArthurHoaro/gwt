@@ -24,7 +24,7 @@ gwt_test_init() {
   export GWT_BASE="$GWT_TEST_ROOT/trees"
   export GIT_CONFIG_NOSYSTEM=1
   export HOME="$GWT_TEST_ROOT/home"
-  unset XDG_CONFIG_HOME
+  unset XDG_CONFIG_HOME XDG_STATE_HOME
   mkdir -p "$HOME"
 
   source "$GWT_TEST_HOME/../gwt.plugin.zsh"

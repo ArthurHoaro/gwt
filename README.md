@@ -24,6 +24,8 @@ gwt sync [-n] [--force] [<branch>|--all]
                                 re-carry files from the main checkout into an existing worktree
 gwt include                     show what a worktree would inherit; changes nothing
 gwt setup [--force]             re-run this repo's setup hook here
+gwt serve [stop|restart|status|logs [-f]|open]
+                                point this repo's single dev server at the current worktree
 ```
 
 `GWT_BASE` sets where worktrees live. The remote is `origin`.
@@ -95,6 +97,43 @@ removes it; it can never block the removal. Resolution is `<repo>/.gwtrc`, then
 tracked config would run code from every `git pull`. Keep it untracked — gwt adds it
 to `.git/info/exclude` for you.
 
+## Dev server
+
+One server per repo, retargetable at any worktree, supervised by systemd. It never
+starts on its own: `gwt serve` is the only thing that starts or moves it.
+
+```zsh
+./install.sh          # symlinks the launcher, installs the unit, daemon-reload
+```
+
+Then, per repo, in an untracked `.gwtrc`:
+
+```zsh
+GWT_SERVER='npm run dev'
+GWT_SERVER_PORT=9000
+```
+
+`gwt serve` inside any worktree points the server there and restarts it. `gwt serve
+status` says which worktree owns it and whether the port is actually live, `gwt serve
+logs -f` follows the journal, and `gwt list` marks the serving worktree with `▶`
+alongside dirty and ahead/behind columns.
+
+Two things keep it from going wrong. Before starting, gwt checks the port: if it is
+held by a process that is not in this unit's cgroup, it refuses and prints the
+offending command line rather than letting systemd restart-loop against it. And
+removing a worktree the server points at stops the server first, so nothing is left
+serving a directory that no longer exists.
+
+The unit uses `KillMode=control-group`, because `next dev` and `concurrently` spawn
+children that would otherwise survive a stop and keep holding the port. `install.sh`
+bakes your current `PATH` into the unit: systemd starts with almost nothing, and zsh
+does not read `.zshrc` for a non-interactive shell, so node would not otherwise
+resolve. Re-run `install.sh` if your node version changes.
+
+Set `GWT_SERVER_HINT=1` before sourcing the plugin to get a one-line note when you cd
+into a worktree that is not the server's target. It is off by default because it costs
+a git call on every directory change.
+
 ## Tests
 
 ```zsh
@@ -113,8 +152,14 @@ unless its sandbox is a directory it created itself under a temp root.
 ```
 gwt.plugin.zsh     entry point; sources lib/*.zsh and registers completion
 lib/gwt.zsh        dispatcher, shared helpers, exit-code table
+lib/config.zsh     .worktreeinclude and .gwtrc resolution
 lib/sync.zsh       carry-over of gitignored files into a fresh worktree
+lib/setup.zsh      .gwtrc hooks and the gwt_step cache
+lib/server.zsh     the singleton dev server client
 completions/_gwt   zsh completion
+libexec/           gwt-serve-run, the systemd ExecStart target
+systemd/           the gwt-server@.service template
+install.sh         installs the launcher and the unit
 test/              destructive-path tests (harness.zsh, run.zsh, test_*.zsh)
 ```
 

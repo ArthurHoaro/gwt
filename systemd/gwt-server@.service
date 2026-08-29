@@ -1,0 +1,21 @@
+[Unit]
+Description=gwt dev server for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/gwt-serve-run %i
+EnvironmentFile=-%h/.local/state/gwt/%i/server.env
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+SuccessExitStatus=0 143
+# next dev and concurrently spawn children that otherwise survive a stop and keep
+# holding the port. Reap the whole cgroup.
+KillMode=control-group
+Environment=HOME=%h
+Environment=PATH=@GWT_PATH@
+
+[Install]
+WantedBy=default.target

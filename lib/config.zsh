@@ -43,3 +43,17 @@ function _gwt_config_file {
   done
   return 1
 }
+
+# Reads one value out of the resolved .gwtrc. Sourced in a subshell, so the config
+# cannot touch the caller no matter what it contains.
+function _gwt_config_value {
+  local main_root="$1" repo="$2" var="$3" cfg rc
+  cfg="$(_gwt_config_file "$main_root" "$repo")"
+  rc=$?
+  (( rc == 0 )) || return $rc
+  (
+    unset "$var"
+    source "$cfg" >/dev/null 2>&1 || exit 1
+    print -r -- "${(P)var}"
+  )
+}

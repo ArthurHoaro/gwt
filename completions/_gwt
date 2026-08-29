@@ -11,6 +11,7 @@ subcmds=(
   'sync:re-carry files from the main checkout into an existing worktree'
   'include:show what a worktree would inherit (changes nothing)'
   'setup:re-run the setup hook in this worktree'
+  'serve:point the single dev server at the current worktree'
 )
 
 if (( CURRENT == 2 )); then
@@ -44,6 +45,20 @@ case "$subcmd" in
     ;;
   reset)
     _arguments -s '(-d --delete)'{-d,--delete}'[also remove the worktree you are leaving]'
+    ;;
+  serve)
+    if (( CURRENT == 3 )); then
+      _describe 'serve command' '(
+        start:point the server at this worktree and restart it
+        stop:stop the server
+        restart:restart it where it already points
+        status:which worktree owns it, and is the port live
+        logs:journal for this repo, -f to follow
+        open:open the server URL in a browser
+      )'
+    else
+      _arguments -s '(-f --force)'{-f,--force}'[follow the log output]'
+    fi
     ;;
   setup)
     _arguments -s '(-f --force)'{-f,--force}'[ignore the step cache and run every step]'

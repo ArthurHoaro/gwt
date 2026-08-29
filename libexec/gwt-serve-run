@@ -1,0 +1,48 @@
+#!/usr/bin/env zsh
+# systemd ExecStart target. Argument is the repo name (the unit's %i).
+# Reads the worktree to serve from gwt's state, then execs that repo's GWT_SERVER.
+
+emulate -L zsh
+setopt err_return
+
+repo="$1"
+[[ -n "$repo" ]] || { print -ru2 -- "gwt-serve-run: no repo given"; exit 2 }
+
+state="${XDG_STATE_HOME:-$HOME/.local/state}/gwt/$repo"
+target_file="$state/target"
+[[ -r "$target_file" ]] || { print -ru2 -- "gwt-serve-run: no target set for '$repo' ($target_file)"; exit 3 }
+
+target="$(<$target_file)"
+[[ -d "$target" ]] || { print -ru2 -- "gwt-serve-run: target is not a directory: $target"; exit 4 }
+
+main_root="$(git -C "$target" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+  || { print -ru2 -- "gwt-serve-run: $target is not a git worktree"; exit 5 }
+main_root="${main_root:h}"
+
+cfg=""
+if [[ -f "$main_root/.gwtrc" ]]; then
+  # Same refusal as the interactive client: a tracked .gwtrc is code from a pull,
+  # and this one would run unattended under systemd.
+  if git -C "$main_root" ls-files --error-unmatch -- .gwtrc >/dev/null 2>&1; then
+    print -ru2 -- "gwt-serve-run: refusing to source $main_root/.gwtrc: git tracks it"
+    exit 6
+  fi
+  cfg="$main_root/.gwtrc"
+else
+  base="${XDG_CONFIG_HOME:-$HOME/.config}/gwt"
+  for c in "$base/$repo/rc" "$base/rc"; do
+    [[ -f "$c" ]] && { cfg="$c"; break }
+  done
+fi
+[[ -n "$cfg" ]] || { print -ru2 -- "gwt-serve-run: no .gwtrc for '$repo'"; exit 7 }
+
+source "$cfg"
+[[ -n "$GWT_SERVER" ]] || { print -ru2 -- "gwt-serve-run: no GWT_SERVER in $cfg"; exit 8 }
+
+export GWT_WORKTREE="$target" GWT_MAIN_ROOT="$main_root" GWT_REPO="$repo"
+GWT_BRANCH="$(git -C "$target" symbolic-ref --quiet --short HEAD 2>/dev/null)" || true
+export GWT_BRANCH
+
+cd "$target"
+print -ru2 -- "gwt-serve-run: $repo → $target ($GWT_SERVER)"
+exec zsh -lc "$GWT_SERVER"
