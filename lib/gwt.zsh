@@ -34,6 +34,10 @@
 #  29   checkout: no such branch (not local, not on remote)
 #  30   checkout: git checkout failed
 #  31   checkout: branch held by a worktree (retry with -f)
+#  40   sync: not inside a worktree and no branch given
+#  41   sync: no worktree found for that branch
+#  42   sync: one or more paths failed to carry
+#  43   sync: --all takes no branch argument
 #
 
 # Current branch (empty if detached)
@@ -56,13 +60,15 @@ function gwt {
 
   local cmd="$1"; shift
 
-  local branch="" start_point="" delete_tree="" force=""
+  local branch="" start_point="" delete_tree="" force="" dry_run="" all=""
   while (( $# )); do
     case "$1" in
       -b) (( $# >= 2 )) || { print -r -- "error: -b requires a start point" >&2; return 22; }
           start_point="$2"; shift 2 ;;
       -d|--delete) delete_tree=1; shift ;;
       -f|--force) force=1; shift ;;
+      -n|--dry-run) dry_run=1; shift ;;
+      --all) all=1; shift ;;
        *) branch="$1"; shift ;;
     esac
   done
@@ -75,6 +81,9 @@ usage:
   gwt checkout [-f] <branch>     # checkout <branch> here; -f force-removes a worktree holding it
   gwt reset [-d]                 # cd back to main repo root (non-tree); -d also removes the worktree you left
   gwt list                       # list all worktrees for current repo
+  gwt sync [-n] [--force] [<branch>|--all]
+                                 # re-carry files from the main checkout into an existing worktree
+  gwt include                    # show what a worktree would inherit; changes nothing
 "
 
   if [[ -z "$cmd" ]]; then
@@ -99,6 +108,47 @@ usage:
     list)
       git worktree list
       return 0
+      ;;
+
+    include)
+      _gwt_include_report "$MAIN_ROOT" "$REPO"
+      return 0
+      ;;
+
+    sync)
+      local -a targets
+      if [[ -n "$all" ]]; then
+        [[ -n "$branch" ]] && { print -r -- "error: --all takes no branch argument" >&2; return 43; }
+        local wt
+        for wt in ${(f)"$(git worktree list --porcelain | awk '/^worktree /{print substr($0,10)}')"}; do
+          [[ "$wt" == "$MAIN_ROOT" ]] && continue
+          targets+=( "$wt" )
+        done
+      elif [[ -n "$branch" ]]; then
+        local found
+        found="$(_gwt_checked_out_paths "$branch")"
+        found="${found%%$'\n'*}"
+        [[ -n "$found" ]] || { [[ -d "$DIR" ]] && found="$DIR" }
+        [[ -n "$found" ]] || { print -r -- "error: no worktree found for '$branch'" >&2; return 41; }
+        targets=( "$found" )
+      else
+        local here
+        here="$(git rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
+        if [[ -z "$here" || "$here" == "$MAIN_ROOT" ]]; then
+          print -r -- "error: not inside a worktree; name a branch or use --all" >&2
+          return 40
+        fi
+        targets=( "$here" )
+      fi
+
+      (( ${#targets} )) || { print -r -- "note: no worktrees to sync" >&2; return 0 }
+
+      local t rc=0
+      for t in "${targets[@]}"; do
+        print -r -- "${t:t}:" >&2
+        _gwt_carry_over "$MAIN_ROOT" "$t" "$REPO" sync "$dry_run" "$force" || rc=42
+      done
+      return $rc
       ;;
 
     reset)
@@ -171,7 +221,7 @@ usage:
       # Local branch exists?
       if git show-ref --verify --quiet "refs/heads/$branch"; then
         git worktree add "$DIR" "$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 10; }
-        _gwt_copy_ignored_files "$MAIN_ROOT" "$DIR"
+        _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 11; }
         return 0
       fi
@@ -180,14 +230,14 @@ usage:
       if git show-ref --verify --quiet "refs/remotes/$REMOTE/$branch"; then
         git worktree add -b "$branch" "$DIR" "$REMOTE/$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 12; }
         git -C "$DIR" branch --set-upstream-to="$REMOTE/$branch" "$branch" >/dev/null 2>&1 || true
-        _gwt_copy_ignored_files "$MAIN_ROOT" "$DIR"
+        _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 13; }
         return 0
       fi
 
       # Else: create new branch from start_point (or HEAD if omitted)
       git worktree add -b "$branch" "$DIR" ${start_point:+"$start_point"} >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
-      _gwt_copy_ignored_files "$MAIN_ROOT" "$DIR"
+      _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
       cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 15; }
       return 0
       ;;

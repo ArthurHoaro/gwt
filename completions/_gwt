@@ -8,6 +8,8 @@ subcmds=(
   'checkout:checkout a branch here (-f force-removes the worktree holding it)'
   'reset:cd back to main repo root (-d also removes the worktree)'
   'list:list all worktrees'
+  'sync:re-carry files from the main checkout into an existing worktree'
+  'include:show what a worktree would inherit (changes nothing)'
 )
 
 if (( CURRENT == 2 )); then
@@ -40,6 +42,17 @@ case "$subcmd" in
     ;;
   reset)
     _arguments -s '(-d --delete)'{-d,--delete}'[also remove the worktree you are leaving]'
+    ;;
+  sync)
+    wt_branches=( ${(f)"$(
+      git worktree list --porcelain 2>/dev/null \
+        | awk '/^branch refs\/heads\//{print substr($0,19)}'
+    )"} )
+    _arguments -s \
+      '(-n --dry-run)'{-n,--dry-run}'[show what would change without touching anything]' \
+      '(-f --force)'{-f,--force}'[replace directories the worktree already has]' \
+      '--all[sync every worktree in this repo]' \
+      ":branch name:(${wt_branches[*]})"
     ;;
   rm)
     if (( CURRENT == 3 )); then

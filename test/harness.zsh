@@ -24,6 +24,7 @@ gwt_test_init() {
   export GWT_BASE="$GWT_TEST_ROOT/trees"
   export GIT_CONFIG_NOSYSTEM=1
   export HOME="$GWT_TEST_ROOT/home"
+  unset XDG_CONFIG_HOME
   mkdir -p "$HOME"
 
   source "$GWT_TEST_HOME/../gwt.plugin.zsh"
@@ -84,6 +85,30 @@ mk_unmerged_branch() {
 
 wt_path() { print -r -- "$GWT_BASE/${1:t}/wt-$2" }
 
+# Gitignored state a worktree might inherit: two config files, a heavy dep dir,
+# and a build dir with one subdirectory worth excluding.
+mk_carry_fixture() {
+  local repo="$1"
+  mkdir -p "$repo"/{.next/cache,.next/server,node_modules/pkg,config}
+  print -r -- "main-cache"  > "$repo/.next/cache/big.js"
+  print -r -- "main-server" > "$repo/.next/server/s.js"
+  print -r -- "main-dep"    > "$repo/node_modules/pkg/p.js"
+  print -r -- "MAIN_ENV"    > "$repo/.env"
+  print -r -- "MAIN_LOCAL"  > "$repo/.env.local"
+  print -r -- "tracked"     > "$repo/config/settings.json"
+  printf '%s\n' 'node_modules' '.next' '.env*' > "$repo/.gitignore"
+  git -C "$repo" add .gitignore config/settings.json
+  git -C "$repo" commit -qm fixture
+}
+
+write_include() { local repo="$1"; shift; printf '%s\n' "$@" > "$repo/.worktreeinclude" }
+
+write_user_include() {
+  local repo="$1"; shift
+  mkdir -p "$HOME/.config/gwt/${repo:t}"
+  printf '%s\n' "$@" > "$HOME/.config/gwt/${repo:t}/worktreeinclude"
+}
+
 mk_worktree() {
   local repo="$1" branch="$2" p
   p="$(wt_path "$repo" "$branch")"
@@ -131,6 +156,15 @@ assert_unregistered() {
   git -C "$1" worktree list --porcelain | grep -qxF "worktree $2" \
     && _fail "$3" "worktree still registered: $2" || _ok "$3"
 }
+
+assert_content() {
+  local path="$1" want="$2" desc="$3"
+  [[ -f "$path" ]] || { _fail "$desc" "missing file: $path"; return }
+  local got="$(<$path)"
+  [[ "$got" == "$want" ]] && _ok "$desc" || _fail "$desc" "expected '$want', got '$got'"
+}
+
+assert_out_has() { [[ "$GWT_OUT" == *"$1"* ]] && _ok "$2" || _fail "$2" "stdout lacked '$1': ${GWT_OUT//$'\n'/ | }" }
 
 assert_eq() { [[ "$1" == "$2" ]] && _ok "$3" || _fail "$3" "expected '$1', got '$2'" }
 assert_err_has() { [[ "$GWT_ERR" == *"$1"* ]] && _ok "$2" || _fail "$2" "stderr lacked '$1': ${GWT_ERR//$'\n'/ | }" }

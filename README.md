@@ -20,12 +20,46 @@ gwt rm  <branch>                remove worktree; delete branch if merged; prune
 gwt checkout [-f] <branch>      checkout <branch> here; -f force-removes a worktree holding it
 gwt reset [-d]                  cd back to the main repo root; -d also removes the worktree you left
 gwt list                        list all worktrees for the current repo
+gwt sync [-n] [--force] [<branch>|--all]
+                                re-carry files from the main checkout into an existing worktree
+gwt include                     show what a worktree would inherit; changes nothing
 ```
 
 `GWT_BASE` sets where worktrees live. The remote is `origin`.
 
-Creating a worktree copies gitignored files (`.env`, local config, …) from the main
-checkout, skipping heavy regenerable directories like `node_modules` and build output.
+## Carry-over
+
+Creating a worktree copies files from the main checkout so `.env`, local config and
+dependencies are usable right away. Copies use reflink where the filesystem supports
+it, so a cloned `node_modules` costs almost no disk until something writes to it.
+
+Put a `.worktreeinclude` at the repo root to say exactly what gets carried:
+
+```
+.env
+.env*.local
+node_modules
+.next
+!.next/cache
+```
+
+It is gitignore syntax, and `!` excludes. Because gitignore itself cannot re-include a
+path inside an excluded directory, gwt applies `!` entries during the copy — so
+`.next` is carried while `.next/cache` is left behind.
+
+Resolution order is `<repo>/.worktreeinclude`, then `~/.config/gwt/<repo>/worktreeinclude`.
+The first one found is used whole; they do not merge. With no file at all, gwt keeps its
+original behaviour — every gitignored path except heavy regenerable directories like
+`node_modules` and build output.
+
+Tracked files are never carried. If an entry matches one, `gwt include` says so.
+On the first real carry, `.worktreeinclude` and `.gwtrc` are added to
+`.git/info/exclude` so they cannot be committed by accident.
+
+`gwt include` prints the resolved plan with sizes and touches nothing. `gwt sync`
+re-runs carry-over into a worktree that already exists — it refreshes files that have
+drifted, but a directory the worktree already has is left alone unless you pass
+`--force`, since that is where installed dependencies live.
 
 ## Tests
 
