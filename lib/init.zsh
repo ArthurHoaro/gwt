@@ -63,7 +63,10 @@ function _gwt_ask {
     [[ -n "$__reply" ]] || __reply="$__default"
   fi
 
-  : ${(P)__var::=$(_gwt_trim "$__reply")}
+  __reply="$(_gwt_trim "$__reply")"
+  # Blank means "keep the default", so clearing one needs a character of its own.
+  [[ "$__reply" == - ]] && __reply=""
+  : ${(P)__var::=$__reply}
   return 0
 }
 
@@ -111,12 +114,13 @@ function _gwt_script_port {
     | head -1
 }
 
-# Prints key<TAB>value for stack, deps, watch, server and port. An unrecognised repo
-# yields empty values, which just means every prompt starts blank.
+# Prints key<TAB>value for stack, server and port, plus one
+# step<TAB>name<TAB>command<TAB>watch-list row per step worth proposing.
+# An unrecognised repo yields empty values, which just means every prompt starts blank.
 function _gwt_detect_stack {
   local root="$1" pm="" deps="" server="" script="" port="" stack=""
-  local manifest="" lock="" fw="" s
-  local -a watch extra
+  local manifest="" lock="" fw="" node_cmd="" s
+  local -a watch rows
 
   if [[ -f "$root/package.json" ]]; then
     manifest=package.json
@@ -128,7 +132,11 @@ function _gwt_detect_stack {
     fi
     deps="$pm install"
     stack="node · $pm"
-    extra=(.nvmrc .node-version)
+    # Both, not just the lockfile: a dependency edit lands in package.json first,
+    # and installing is what regenerates the lockfile to match it.
+    watch=(package.json)
+    [[ -f "$root/$lock" ]] && watch+=("$lock")
+    [[ -f "$root/.nvmrc" || -f "$root/.node-version" ]] && node_cmd="nvm use"
     for s in dev start; do
       script="$(_gwt_pkg_script "$root" "$s")"
       [[ -n "$script" ]] && break
@@ -163,13 +171,21 @@ function _gwt_detect_stack {
     [[ -f "$root/manage.py" ]] && { stack="python · django"; server="python manage.py runserver"; port=8000 }
   fi
 
-  [[ -n "$lock" && -f "$root/$lock" ]] && watch=("$lock")
-  (( ${#watch} )) || { [[ -n "$manifest" && -f "$root/$manifest" ]] && watch=("$manifest") }
-  for s in "${extra[@]}"; do
-    [[ -f "$root/$s" ]] && watch+=("$s")
-  done
+  if (( ! ${#watch} )); then
+    if [[ -n "$lock" && -f "$root/$lock" ]]; then
+      watch=("$lock")
+    elif [[ -n "$manifest" && -f "$root/$manifest" ]]; then
+      watch=("$manifest")
+    fi
+  fi
 
-  printf '%s\t%s\n' stack "$stack" deps "$deps" watch "${watch[*]}" server "$server" port "$port"
+  # Deliberately unwatched: it costs nothing to repeat, and it is a change to the
+  # shell the later steps run in, so skipping it would leave them on the wrong node.
+  [[ -n "$node_cmd" ]] && rows+=( "node"$'\t'"$node_cmd"$'\t' )
+  [[ -n "$deps" ]] && rows+=( "deps"$'\t'"$deps"$'\t'"${watch[*]}" )
+
+  printf '%s\t%s\n' stack "$stack" server "$server" port "$port"
+  for s in "${rows[@]}"; do print -r -- "step"$'\t'"$s"; done
 }
 
 # A soft note only: version managers and direnv routinely put a project's tools on
@@ -282,10 +298,17 @@ function _gwt_init {
   fi
 
   local -A det
-  local line
+  local -a proposed
+  local line key
   for line in ${(f)"$(_gwt_detect_stack "$main_root")"}; do
-    det[${line%%$'\t'*}]="${line#*$'\t'}"
+    key="${line%%$'\t'*}"
+    if [[ "$key" == step ]]; then
+      proposed+=( "${line#*$'\t'}" )
+    else
+      det[$key]="${line#*$'\t'}"
+    fi
   done
+  (( ${#proposed} )) || proposed=( "deps"$'\t'$'\t' )
 
   local width=$(_gwt_fmt_width)
   print -r -- "" >&2
@@ -293,9 +316,9 @@ function _gwt_init {
   _gwt_note "${target/#$HOME/~}"
   [[ -n "${det[stack]}" ]] && _gwt_note "detected ${det[stack]}"
   if [[ -t 0 ]] && [[ -o zle ]]; then
-    _gwt_note "edit what is shown, or Enter to accept it · Ctrl-D cancels"
+    _gwt_note "edit in place · Enter accepts · '-' clears · Ctrl-D cancels"
   else
-    _gwt_note "Enter accepts the value in brackets · Ctrl-D cancels"
+    _gwt_note "Enter accepts the bracketed value · '-' clears · Ctrl-D cancels"
   fi
 
   local shadowed
@@ -308,16 +331,20 @@ function _gwt_init {
     "A step that watches files is skipped while those files are unchanged."
 
   local -a steps
-  local deps_cmd="" deps_watch="" missing
-  _gwt_ask deps_cmd "deps command" "${det[deps]}" || return 82
-  if [[ -n "$deps_cmd" ]]; then
-    _gwt_ask deps_watch "re-run when" "${det[watch]}" || return 82
-    steps+=( "deps"$'\t'"$deps_watch"$'\t'"$deps_cmd" )
-    missing="$(_gwt_missing_bin "$main_root" "$deps_cmd")" \
-      && _gwt_warn "${_GWT_FMT[bold]}$missing${_GWT_FMT[reset]} is not on your PATH right now"
-  fi
-
+  local missing row pname pcmd pwatch
   local name cmd watched
+  for row in "${proposed[@]}"; do
+    pname="${row%%$'\t'*}"
+    pcmd="${${row#*$'\t'}%%$'\t'*}"
+    pwatch="${row##*$'\t'}"
+    _gwt_ask cmd "$pname command" "$pcmd" || return 82
+    [[ -n "$cmd" ]] || continue
+    _gwt_ask watched "re-run when" "$pwatch" || return 82
+    steps+=( "$pname"$'\t'"$watched"$'\t'"$cmd" )
+    missing="$(_gwt_missing_bin "$main_root" "$cmd")" \
+      && _gwt_warn "${_GWT_FMT[bold]}$missing${_GWT_FMT[reset]} is not on your PATH right now"
+  done
+
   while :; do
     _gwt_ask name "step $(( ${#steps} + 1 )) name" "" || return 82
     [[ -n "$name" ]] || break

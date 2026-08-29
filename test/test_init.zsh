@@ -36,7 +36,7 @@ JSON
 run_gwt_in "$(answers '' '' '' '' '' 'y')" init
 assert_rc 0 "init: succeeds on a detected node repo"
 assert_err_has "[npm install]" "init: proposes the package manager it found"
-assert_err_has "[package-lock.json]" "init: watches the lockfile it found"
+assert_err_has "[package.json package-lock.json]" "init: watches the manifest and the lockfile"
 assert_err_has "[npm run dev]" "init: proposes the dev script it found"
 assert_err_has "[4300]" "init: reads the port out of the dev script"
 
@@ -45,7 +45,7 @@ rc="$(<$repo/.gwtrc)"
   && _ok "init: writes GWT_SERVER" || _fail "init: writes GWT_SERVER" "$rc"
 [[ "$rc" == *"GWT_SERVER_PORT=4300"* ]] \
   && _ok "init: writes GWT_SERVER_PORT" || _fail "init: writes GWT_SERVER_PORT" "$rc"
-[[ "$rc" == *"gwt_step deps --watch package-lock.json -- npm install"* ]] \
+[[ "$rc" == *"gwt_step deps --watch package.json --watch package-lock.json -- npm install"* ]] \
   && _ok "init: writes the deps step" || _fail "init: writes the deps step" "$rc"
 
 # The values it wrote are the ones gwt reads back for the dev server.
@@ -53,6 +53,32 @@ assert_eq "npm run dev" "$(_gwt_config_value "$repo" "${repo:t}" GWT_SERVER)" \
   "init: GWT_SERVER round-trips through the config reader"
 assert_eq "4300" "$(_gwt_config_value "$repo" "${repo:t}" GWT_SERVER_PORT)" \
   "init: GWT_SERVER_PORT round-trips through the config reader"
+
+# A pinned node version earns a step of its own, ahead of the install: it changes
+# the shell the later steps run in, so it must not be cached behind a watched file.
+rm "$repo/.gwtrc"
+print -r -- "22" > "$repo/.nvmrc"
+run_gwt_in "$(answers '' '' '' '' '' '' '' 'y')" init
+assert_rc 0 "init: succeeds when a node version is pinned"
+assert_err_has "[nvm use]" "init: proposes nvm use for a pinned node version"
+rc="$(<$repo/.gwtrc)"
+[[ "$rc" == *"gwt_step node -- nvm use"$'\n'"  gwt_step deps --watch package.json"* ]] \
+  && _ok "init: the node step is unwatched and comes before the install" \
+  || _fail "init: the node step is unwatched and comes before the install" "$rc"
+
+# .node-version pins it just as well.
+mv "$repo/.nvmrc" "$repo/.node-version"
+run_gwt_in "$(answers '' '' '' '' '' '' '' 'y')" init --force
+[[ "$(<$repo/.gwtrc)" == *"gwt_step node -- nvm use"* ]] \
+  && _ok "init: .node-version pins the node step too" \
+  || _fail "init: .node-version pins the node step too" "$(<$repo/.gwtrc)"
+
+# Blank keeps the default, so clearing a proposed command takes a character.
+run_gwt_in "$(answers '-' '' '' '' '' '' 'y')" init --force
+[[ "$(<$repo/.gwtrc)" != *"gwt_step node"* ]] \
+  && _ok "init: blanking a proposed command drops that step" \
+  || _fail "init: blanking a proposed command drops that step" "$(<$repo/.gwtrc)"
+rm "$repo/.node-version"
 
 # Typed answers override the detected ones, and --force rewrites.
 run_gwt_in "$(answers 'yarn install --frozen-lockfile' 'yarn.lock' '' 'yarn dev' '5173' 'y')" init --force

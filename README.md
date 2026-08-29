@@ -77,8 +77,14 @@ filled in and editable in place, so accepting a default and correcting one cost 
 same. Nothing is written until it has shown you the finished file. `--force`
 rewrites one that already exists.
 
+On a node project that pins its version, the proposed steps are `nvm use` and then
+the install, in that order. The install watches `package.json` and the lockfile, so
+it re-runs when either moves; `nvm use` watches nothing, because it changes the shell
+the later steps run in and skipping it would leave them on the wrong node.
+
 Answers piped in work too: with no terminal to edit on, the defaults come back as
-bracketed hints and colour is dropped, so it stays usable from a script.
+bracketed hints and colour is dropped, so it stays usable from a script. Blank always
+means "keep what is shown", so `-` is how you clear a value.
 
 Or write it by hand. A `.gwtrc` at the repo root says what should happen when a
 worktree is created:
