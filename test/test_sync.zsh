@@ -4,7 +4,7 @@ gwt_test_init "sync"
 
 repo="$(mk_repo)"
 mk_carry_fixture "$repo"
-write_include "$repo" '.env' '.env*.local' 'node_modules' '.next' '!.next/cache'
+write_include "$repo" '.env' '.env*.local' 'node_modules' '.next' '!.next/cache' 'config/settings.json'
 mk_branch "$repo" feat-a
 wt="$(mk_worktree "$repo" feat-a)"
 cd "$repo"
@@ -17,7 +17,7 @@ run_gwt sync feat-a
 assert_rc 0 "sync: succeeds"
 assert_content "$wt/.env.local" MAIN_LOCAL "sync: refreshes a stale file"
 assert_content "$wt/.env" SAME "sync: leaves an identical file alone"
-assert_err_has "update" "sync: reports the update"
+assert_err_has "1 updated" "sync: counts only the file that actually drifted"
 
 # a missing file is added
 rm "$wt/.env.local"
@@ -78,6 +78,9 @@ assert_rc 0 "sync --all: succeeds"
 assert_exists "$wt/.env" "sync --all: reaches the first worktree"
 assert_exists "$wt2/.env" "sync --all: reaches the second worktree"
 assert_content "$repo/.env" SAME "sync --all: main checkout untouched"
+print -r -- "$GWT_ERR" | grep -qx "${repo:t}:" \
+  && _fail "sync --all: never targets the main repo" "main repo appeared as a sync target" \
+  || _ok "sync --all: never targets the main repo"
 
 # argument errors
 run_gwt sync --all feat-a
