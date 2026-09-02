@@ -92,9 +92,31 @@ assert_out_has "9000" "serve status: shows the port"
 
 run_gwt serve logs
 assert_rc 0 "serve logs: succeeds"
-assert_eq "journalctl -a -u gwt-server@${repo:t}.service -n 200" "$(last_call)" "serve logs: reads this repo's unit"
+assert_eq "journalctl -a --no-hostname -o short-iso -u gwt-server@${repo:t}.service -n 200" "$(last_call)" "serve logs: reads this repo's unit"
 run_gwt serve logs -f
-assert_eq "journalctl -a -u gwt-server@${repo:t}.service -f -n 200" "$(last_call)" "serve logs -f: follows"
+assert_rc 0 "serve logs -f: succeeds"
+assert_eq "journalctl -a --no-hostname -o short-iso -u gwt-server@${repo:t}.service -n 200 -f" "$(last_call)" "serve logs -f: follows"
+
+# The trim: every line of a single-unit log carries the same date, host and pid, so
+# only the clock survives. Colors must come through it untouched.
+trimmed() { print -r -- "$2" | _gwt_logs_trim "$1" }
+assert_eq "10:07:30  GET /api/auth/session 200 in 37ms" \
+  "$(trimmed '' '2026-09-01T10:07:30-04:00 gwt-serve-run[3881517]:  GET /api/auth/session 200 in 37ms')" \
+  "logs: keeps the clock, drops the date, the offset and launcher[pid]"
+assert_eq "10:06:35 Started gwt dev server for learn." \
+  "$(trimmed '' '2026-09-01T10:06:35-04:00 systemd[1453]: Started gwt dev server for learn.')" \
+  "logs: trims systemd's own lifecycle lines the same way"
+assert_eq "10:07:30 $(print -r -- $'\e[32m200\e[39m') in 37ms" \
+  "$(trimmed '' "2026-09-01T10:07:30-04:00 gwt-serve-run[3881517]: $(print -r -- $'\e[32m200\e[39m') in 37ms")" \
+  "logs: the server's color escapes survive the trim"
+assert_eq "10:07:30 worker[42]: ready" \
+  "$(trimmed '' '2026-09-01T10:07:30-04:00 gwt-serve-run[3881517]: worker[42]: ready')" \
+  "logs: a message that looks like a prefix is left alone"
+assert_eq "-- No entries --" "$(trimmed '' '-- No entries --')" \
+  "logs: journalctl's own notes pass through"
+assert_eq "$(print -r -- $'\e[2m')10:07:30$(print -r -- $'\e[22m') up" \
+  "$(trimmed 1 '2026-09-01T10:07:30-04:00 gwt-serve-run[3881517]: up')" \
+  "logs: dims the clock when it is going to a terminal"
 
 run_gwt serve nonsense
 assert_rc 64 "serve: rejects an unknown subcommand"

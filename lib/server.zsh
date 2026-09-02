@@ -36,6 +36,15 @@ function _gwt_pid_is_ours {
 
 function _gwt_unit_installed { _gwt_systemctl cat "gwt-server@.service" >/dev/null 2>&1 }
 
+# journalctl prints "timestamp hostname launcher[pid]:" ahead of every line, all of it
+# identical down a log already filtered to one unit. Only the clock survives. Reads
+# short-iso, not short, because the month name in short output is locale-dependent.
+function _gwt_logs_trim {
+  local pre="" post=""
+  [[ -n "$1" ]] && { pre=$'\e[2m'; post=$'\e[22m' }
+  sed -uE "s/^[0-9-]+T([0-9]{2}:[0-9]{2}:[0-9]{2})[^ ]* [^ ]+: /$pre\1$post /"
+}
+
 function _gwt_serve {
   local sub="$1" main_root="$2" repo="$3" follow="$4"
   local unit="$(_gwt_server_unit "$repo")"
@@ -121,8 +130,17 @@ function _gwt_serve {
 
     logs)
       # -a: without it journalctl drops the server's color escapes as unprintable.
-      _gwt_journalctl -a -u "$unit" ${follow:+-f} -n 200
-      return $?
+      local -a jargs=( -a --no-hostname -o short-iso -u "$unit" -n 200 ${follow:+-f} )
+      local dim=""
+      [[ -t 1 ]] && dim=1
+      if [[ -z "$follow" && -n "$dim" ]] && (( $+commands[less] )); then
+        # journalctl only runs its own pager when it owns stdout, and the trim takes
+        # that away. Same less options it would have used.
+        _gwt_journalctl "${jargs[@]}" | _gwt_logs_trim "$dim" | less "-${SYSTEMD_LESS:-FRSXMK}"
+      else
+        _gwt_journalctl "${jargs[@]}" | _gwt_logs_trim "$dim"
+      fi
+      return ${pipestatus[1]}
       ;;
 
     open)

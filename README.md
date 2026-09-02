@@ -158,6 +158,11 @@ for the server, and the log reader asks for fields the journal would otherwise h
 back as unprintable. Override `FORCE_COLOR`, or `export NO_COLOR=1`, in your `.gwtrc`
 to change that; either takes effect on the next `gwt serve restart`.
 
+Logs are also trimmed. Every line out of the journal carries the same date, hostname
+and launcher pid ahead of the message, which for a log already filtered to one unit is
+60 characters of nothing: only the clock is kept, dimmed, when you are reading on a
+terminal. `journalctl --user -u gwt-server@<repo>.service` still gives the raw view.
+
 Two things keep it from going wrong. Before starting, gwt checks the port: if it is
 held by a process that is not in this unit's cgroup, it refuses and prints the
 offending command line rather than letting systemd restart-loop against it. And
