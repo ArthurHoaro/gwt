@@ -92,9 +92,9 @@ assert_out_has "9000" "serve status: shows the port"
 
 run_gwt serve logs
 assert_rc 0 "serve logs: succeeds"
-assert_eq "journalctl -u gwt-server@${repo:t}.service -n 200" "$(last_call)" "serve logs: reads this repo's unit"
+assert_eq "journalctl -a -u gwt-server@${repo:t}.service -n 200" "$(last_call)" "serve logs: reads this repo's unit"
 run_gwt serve logs -f
-assert_eq "journalctl -u gwt-server@${repo:t}.service -f -n 200" "$(last_call)" "serve logs -f: follows"
+assert_eq "journalctl -a -u gwt-server@${repo:t}.service -f -n 200" "$(last_call)" "serve logs -f: follows"
 
 run_gwt serve nonsense
 assert_rc 64 "serve: rejects an unknown subcommand"

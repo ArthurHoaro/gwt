@@ -120,7 +120,8 @@ function _gwt_serve {
       ;;
 
     logs)
-      _gwt_journalctl -u "$unit" ${follow:+-f} -n 200
+      # -a: without it journalctl drops the server's color escapes as unprintable.
+      _gwt_journalctl -a -u "$unit" ${follow:+-f} -n 200
       return $?
       ;;
 

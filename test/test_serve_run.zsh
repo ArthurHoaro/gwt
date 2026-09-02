@@ -53,5 +53,14 @@ run_launcher "${repo:t}"
 assert_rc 0 "launcher: runs the server command"
 assert_eq "up ${repo:t} wt-feat-a feat-a wt-feat-a" "$GWT_OUT" "launcher: execs it in the worktree with the hook env set"
 
+# The journal is not a tty: without this the dev server logs come out colorless.
+write_gwtrc "$repo" "GWT_SERVER='print -r -- \"color=\$FORCE_COLOR cli=\$CLICOLOR_FORCE\"'"
+run_launcher "${repo:t}"
+assert_eq "color=1 cli=1" "$GWT_OUT" "launcher: forces color on for the server it starts"
+
+write_gwtrc "$repo" 'FORCE_COLOR=3' "GWT_SERVER='print -r -- \"color=\$FORCE_COLOR\"'"
+run_launcher "${repo:t}"
+assert_eq "color=3" "$GWT_OUT" "launcher: the rc can override the forced color level"
+
 cd /
 gwt_test_done

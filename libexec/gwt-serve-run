@@ -36,6 +36,10 @@ else
 fi
 [[ -n "$cfg" ]] || { print -ru2 -- "gwt-serve-run: no .gwtrc for '$repo'"; exit 7 }
 
+# Nothing downstream of here is a tty, so next dev and friends emit no color at all
+# unless told to. Set before the rc, so a repo can raise the level or export NO_COLOR.
+export FORCE_COLOR="${FORCE_COLOR:-1}" CLICOLOR_FORCE="${CLICOLOR_FORCE:-1}"
+
 source "$cfg"
 [[ -n "$GWT_SERVER" ]] || { print -ru2 -- "gwt-serve-run: no GWT_SERVER in $cfg"; exit 8 }
 

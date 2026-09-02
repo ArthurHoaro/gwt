@@ -152,6 +152,12 @@ status` says which worktree owns it and whether the port is actually live, `gwt 
 logs -f` follows the journal, and `gwt list` marks the serving worktree with `▶`
 alongside dirty and ahead/behind columns.
 
+Logs keep the dev server's colors. A process writing to the journal has no terminal,
+so most tools turn color off: the launcher sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1`
+for the server, and the log reader asks for fields the journal would otherwise hand
+back as unprintable. Override `FORCE_COLOR`, or `export NO_COLOR=1`, in your `.gwtrc`
+to change that; either takes effect on the next `gwt serve restart`.
+
 Two things keep it from going wrong. Before starting, gwt checks the port: if it is
 held by a process that is not in this unit's cgroup, it refuses and prints the
 offending command line rather than letting systemd restart-loop against it. And
