@@ -48,7 +48,7 @@
 #  65   serve: the systemd unit is not installed
 #  66   serve: no server target set yet
 #  70   prune: one or more worktrees failed to remove
-#  71   go: no worktrees to choose from
+#  71   go: nothing to choose from
 #  72   prune: no criteria given, or no default branch
 #  80   init: .gwtrc already exists (use --force)
 #  81   init: git tracks .gwtrc
@@ -109,13 +109,40 @@ function _gwt_list {
   done
 }
 
+# One row per branch that has no worktree: display<TAB><TAB>branch. The empty path
+# field is what tells `gwt go` to create the worktree instead of cd'ing into one.
+# Most recently committed first, and remote-only branches after the local ones.
+function _gwt_branch_rows {
+  local remote="$1" b when disp wtb
+  local -A held is_local
+
+  while read -r wtb; do
+    [[ -n "$wtb" ]] && held[$wtb]=1
+  done < <(git worktree list --porcelain | awk '/^branch refs\/heads\//{print substr($0,19)}')
+
+  while IFS=$'\t' read -r b when; do
+    is_local[$b]=1
+    [[ -n "${held[$b]}" ]] && continue
+    disp="$(printf '+ %-28s %-26s' "$when" "$b")"
+    printf '%s\t\t%s\n' "$disp" "$b"
+  done < <(git for-each-ref --sort=-committerdate \
+    --format='%(refname:short)%09%(committerdate:relative)' refs/heads)
+
+  while IFS=$'\t' read -r b when; do
+    [[ "$b" == HEAD || -n "${is_local[$b]}" ]] && continue
+    disp="$(printf '+ %-28s %-26s %s' "$when" "$b" "$remote")"
+    printf '%s\t\t%s\n' "$disp" "$b"
+  done < <(git for-each-ref --sort=-committerdate \
+    --format='%(refname:lstrip=3)%09%(committerdate:relative)' "refs/remotes/$remote")
+}
+
 # fzf when it is there, zsh's select when it is not. Tests replace this wholesale.
 function _gwt_pick {
   local -a rows=("$@")
   (( ${#rows} )) || return 1
   if (( $+commands[fzf] )); then
     print -rl -- "${rows[@]}" \
-      | fzf --delimiter=$'\t' --with-nth=1 --no-multi --height=40% --reverse --prompt='worktree> '
+      | fzf --delimiter=$'\t' --with-nth=1 --no-multi --height=40% --reverse --prompt='go> '
     return $?
   fi
   local choice
@@ -362,15 +389,23 @@ usage:
     add|go)
       local setup_rc=0
 
-      # bare `gwt go` is a picker over the worktrees that already exist
+      # bare `gwt go` is a picker over the existing worktrees plus every branch that
+      # has none; picking one of those falls through to the normal `gwt go <branch>`.
       if [[ "$cmd" == "go" && -z "$branch" ]]; then
         local -a rows
-        rows=( ${(f)"$(_gwt_worktree_rows "$MAIN_ROOT" "$REPO")"} )
-        (( ${#rows} )) || { print -r -- "error: no worktrees to choose from" >&2; return 71 }
+        rows=(
+          ${(f)"$(_gwt_worktree_rows "$MAIN_ROOT" "$REPO")"}
+          ${(f)"$(_gwt_branch_rows "$REMOTE")"}
+        )
+        (( ${#rows} )) || { print -r -- "error: nothing to choose from" >&2; return 71 }
         local picked dest
         picked="$(_gwt_pick "${rows[@]}")" || return 0
         [[ -n "$picked" ]] || return 0
         dest="${${picked#*$'\t'}%%$'\t'*}"
+        if [[ -z "$dest" ]]; then
+          gwt go ${no_setup:+--no-setup} "${picked##*$'\t'}"
+          return $?
+        fi
         cd "$dest" || { print -r -- "error: failed to cd to $dest" >&2; return 5; }
         return 0
       fi

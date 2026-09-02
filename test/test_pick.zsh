@@ -64,6 +64,51 @@ run_gwt go feat-a
 assert_rc 0 "go <branch>: still goes straight there"
 assert_eq "$wt_a" "$PWD" "go <branch>: ignores the picker"
 
+# the picker also offers the branches that have no worktree yet
+mk_branch "$repo" feat-c
+git -C "$repo" push -q origin main:from-origin
+git -C "$repo" fetch -q --prune origin
+cd "$repo"
+brows=( ${(f)"$(_gwt_branch_rows origin)"} )
+bnames=" ${${brows[@]##*$'\t'}} "
+[[ "$bnames" == *" feat-c "* ]] \
+  && _ok "branch rows: a branch with no worktree is offered" \
+  || _fail "branch rows: a branch with no worktree is offered" "got $bnames"
+[[ "$bnames" == *" from-origin "* ]] \
+  && _ok "branch rows: a branch that only exists on origin is offered" \
+  || _fail "branch rows: a branch that only exists on origin is offered" "got $bnames"
+[[ "$bnames" != *" feat-a "* ]] \
+  && _ok "branch rows: a branch that already has a worktree is left out" \
+  || _fail "branch rows: a branch that already has a worktree is left out" "got $bnames"
+[[ "$bnames" != *" HEAD "* && "$bnames" != *" origin "* ]] \
+  && _ok "branch rows: origin/HEAD is not offered as a branch" \
+  || _fail "branch rows: origin/HEAD is not offered as a branch" "got $bnames"
+
+row_c=""; row_o=""
+for r in "${brows[@]}"; do
+  [[ "${r##*$'\t'}" == feat-c ]] && row_c="$r"
+  [[ "${r##*$'\t'}" == from-origin ]] && row_o="$r"
+done
+assert_eq "" "${${row_c#*$'\t'}%%$'\t'*}" "branch rows: carry no path, which is what marks them"
+
+# picking a branch row creates its worktree
+function _gwt_pick { print -r -- "$row_c" }
+cd "$repo"
+run_gwt go
+assert_rc 0 "go: picking a branch with no worktree succeeds"
+assert_eq "$(wt_path "$repo" feat-c)" "$PWD" "go: cds into the worktree it just created"
+assert_registered "$repo" "$(wt_path "$repo" feat-c)" "go: the created worktree is registered"
+
+# picking a remote-only branch creates the local branch too
+function _gwt_pick { print -r -- "$row_o" }
+cd "$repo"
+run_gwt go
+assert_rc 0 "go: picking a remote-only branch succeeds"
+assert_eq "$(wt_path "$repo" from-origin)" "$PWD" "go: cds into the worktree for the remote branch"
+assert_branch "$repo" from-origin "go: creates the local branch for a remote-only pick"
+assert_eq "origin/from-origin" "$(git -C "$PWD" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)" \
+  "go: the created branch tracks origin"
+
 # no worktrees to choose from
 cd /
 repo2="$(mk_repo solo)"

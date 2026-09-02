@@ -30,8 +30,9 @@ gwt serve [stop|restart|status|logs [-f]|open]
 gwt prune --merged [-n] [-f]    remove worktrees whose branch is merged or gone on origin
 ```
 
-`gwt go` with no branch opens a picker over the worktrees that already exist — fzf if
-you have it, a numbered menu if you do not.
+`gwt go` with no branch opens a picker — fzf if you have it, a numbered menu if you do
+not. It lists the worktrees that already exist, then every branch that has none (local
+first, then origin-only, most recent first); picking one of those creates its worktree.
 
 `GWT_BASE` sets where worktrees live. The remote is `origin`.
 
