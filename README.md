@@ -15,7 +15,7 @@ The `-f` guard keeps a machine that has not cloned this repo from erroring at sh
 
 ```
 gwt add [-b <start>] [--bg] <branch>
-                                create worktree from <start> (default HEAD), cd into it
+                                create worktree from <start>, cd into it
 gwt go  [-b <start>] [--bg] <branch>
                                 cd into worktree if it exists; otherwise create it
 gwt rm  <branch>                remove worktree; delete branch if merged; prune
@@ -38,6 +38,26 @@ not. It lists the worktrees that already exist, then every branch that has none 
 first, then origin-only, most recent first); picking one of those creates its worktree.
 
 `GWT_BASE` sets where worktrees live. The remote is `origin`.
+
+## Where a new branch starts
+
+A branch that does not exist yet is created from the project's default branch —
+`origin/main`, or whatever `origin/HEAD` points at — not from wherever you happen to
+be standing. Branching off the tip of the project is what you almost always want, and
+the fetch that `gwt add` does first means it is the current tip, not a stale local
+copy. The new branch gets no upstream from this: it is a start point, not something to
+track.
+
+`-b <start>` names any other base, `-b HEAD` included. To have every new branch start
+where you stand, the way `git checkout -b` does, set the base yourself:
+
+```zsh
+GWT_NEW_BRANCH_BASE=HEAD        # in a .gwtrc, or exported from your zshrc
+GWT_NEW_BRANCH_BASE=develop     # or any other ref
+```
+
+The repo's `.gwtrc` wins over the environment, so a repo that branches off `develop`
+can say so without disturbing your own default.
 
 ## Carry-over
 

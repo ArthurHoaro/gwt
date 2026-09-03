@@ -1,17 +1,6 @@
 # Bulk removal of worktrees whose branch is finished: merged into the default branch,
 # or tracking an upstream that no longer exists.
 
-function _gwt_default_branch {
-  local ref b
-  ref="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" \
-    && { print -r -- "${ref#origin/}"; return 0 }
-  for b in main master; do
-    git show-ref --verify --quiet "refs/remotes/origin/$b" && { print -r -- "$b"; return 0 }
-    git show-ref --verify --quiet "refs/heads/$b" && { print -r -- "$b"; return 0 }
-  done
-  return 1
-}
-
 # branch<TAB>path<TAB>reason
 function _gwt_prune_candidates {
   local main_root="$1" default="$2" base

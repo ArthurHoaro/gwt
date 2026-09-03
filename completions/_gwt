@@ -27,7 +27,7 @@ local subcmd="${words[2]}"
 case "$subcmd" in
   add)
     _arguments -s \
-      '-b[start point branch]:start branch:__git_branch_names' \
+      '-b[base the new branch on this ref]:start branch:__git_branch_names' \
       '--bg[run the setup hook in the background]' \
       '--fg[run the setup hook in the foreground]' \
       ':branch name:'
@@ -38,7 +38,7 @@ case "$subcmd" in
         | awk '/^branch refs\/heads\//{print substr($0,19)}'
     )"} )
     _arguments -s \
-      '-b[start point branch]:start branch:__git_branch_names' \
+      '-b[base the new branch on this ref]:start branch:__git_branch_names' \
       '--no-setup[skip the setup hook]' \
       '--bg[run the setup hook in the background]' \
       '--fg[run the setup hook in the foreground]' \

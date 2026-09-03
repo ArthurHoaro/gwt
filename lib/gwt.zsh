@@ -62,6 +62,36 @@
 # Current branch (empty if detached)
 function _gwt_current_branch { git symbolic-ref --quiet --short HEAD 2>/dev/null || true }
 
+# The branch the project is built around. Shared by prune and by the start point a
+# new branch gets.
+function _gwt_default_branch {
+  local ref b
+  ref="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" \
+    && { print -r -- "${ref#origin/}"; return 0 }
+  for b in main master; do
+    git show-ref --verify --quiet "refs/remotes/origin/$b" && { print -r -- "$b"; return 0 }
+    git show-ref --verify --quiet "refs/heads/$b" && { print -r -- "$b"; return 0 }
+  done
+  return 1
+}
+
+# Where a brand-new branch starts. A new branch nearly always means "off the tip of
+# the project", not "off whatever I happen to be standing in", so the default branch
+# wins over HEAD; GWT_NEW_BRANCH_BASE=HEAD in the rc or the environment restores git's
+# own behaviour, and any other ref names itself.
+function _gwt_new_branch_base {
+  local main_root="$1" repo="$2" remote="$3" base default
+  base="$(_gwt_config_value "$main_root" "$repo" GWT_NEW_BRANCH_BASE 2>/dev/null)"
+  [[ -n "$base" ]] || base="$GWT_NEW_BRANCH_BASE"
+  [[ -n "$base" ]] && { print -r -- "$base"; return 0 }
+
+  default="$(_gwt_default_branch)" || { print -r -- HEAD; return 0 }
+  # add and go fetch first, so the remote-tracking ref is the fresher of the two.
+  git show-ref --verify --quiet "refs/remotes/$remote/$default" \
+    && { print -r -- "$remote/$default"; return 0 }
+  print -r -- "$default"
+}
+
 # Where the branch is actually checked out (if anywhere).
 # This, not "$BASE/$REPO/wt-$branch", is the source of truth: a worktree keeps its
 # directory name when the branch inside it is renamed or swapped.
@@ -182,7 +212,7 @@ function gwt {
   local usage="
 usage:
   gwt add [-b <start>] [--bg|--fg] <branch>
-                                 # create worktree from <start> (default: HEAD), cd into it
+                                 # create worktree from <start> (default: the repo's default branch), cd into it
   gwt go  [-b <start>] [--bg|--fg] <branch>
                                  # cd into worktree if exists; otherwise create from <start>
   gwt rm  <branch>               # remove worktree; delete branch if merged; prune
@@ -475,8 +505,17 @@ usage:
         return $setup_rc
       fi
 
-      # Else: create new branch from start_point (or HEAD if omitted)
-      git worktree add -b "$branch" "$DIR" ${start_point:+"$start_point"} >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
+      # Else: create the branch, from -b or from the repo's default base.
+      local base="$start_point"
+      local -a add_opts
+      if [[ -z "$base" ]]; then
+        base="$(_gwt_new_branch_base "$MAIN_ROOT" "$REPO" "$REMOTE")"
+        # Branching off origin/<default> would otherwise adopt it as the upstream,
+        # which is never what a new branch wants.
+        add_opts=( --no-track )
+        [[ "$base" == HEAD ]] || print -r -- "note: branching '$branch' off $base" >&2
+      fi
+      git worktree add "${add_opts[@]}" -b "$branch" "$DIR" "$base" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
       _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
       [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
       cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 15; }
