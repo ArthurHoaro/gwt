@@ -11,7 +11,7 @@ subcmds=(
   'sync:re-carry files from the main checkout into an existing worktree'
   'include:show what a worktree would inherit (changes nothing)'
   'init:wizard that writes the .gwtrc for this repo'
-  'setup:re-run the setup hook in this worktree'
+  'setup:re-run the setup hook here, or follow one running in the background'
   'serve:point the single dev server at the current worktree'
   'prune:remove worktrees whose branch is merged or gone on origin'
 )
@@ -28,6 +28,8 @@ case "$subcmd" in
   add)
     _arguments -s \
       '-b[start point branch]:start branch:__git_branch_names' \
+      '--bg[run the setup hook in the background]' \
+      '--fg[run the setup hook in the foreground]' \
       ':branch name:'
     ;;
   go)
@@ -38,6 +40,8 @@ case "$subcmd" in
     _arguments -s \
       '-b[start point branch]:start branch:__git_branch_names' \
       '--no-setup[skip the setup hook]' \
+      '--bg[run the setup hook in the background]' \
+      '--fg[run the setup hook in the foreground]' \
       ":branch name:(${wt_branches[*]})"
     ;;
   checkout|co)
@@ -72,7 +76,16 @@ case "$subcmd" in
     _arguments -s '(-f --force)'{-f,--force}'[overwrite an existing .gwtrc]'
     ;;
   setup)
-    _arguments -s '(-f --force)'{-f,--force}'[ignore the step cache and run every step]'
+    if (( CURRENT == 3 )); then
+      _describe 'setup command' '(
+        attach:follow the background run, ctrl-c to leave it running
+        status:where the background run stands
+      )'
+    fi
+    _arguments -s \
+      '(-f --force)'{-f,--force}'[ignore the step cache and run every step]' \
+      '--bg[run in the background and return at once]' \
+      '--fg[run in the foreground even if the rc asks for background]'
     ;;
   sync)
     wt_branches=( ${(f)"$(

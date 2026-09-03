@@ -14,8 +14,10 @@ The `-f` guard keeps a machine that has not cloned this repo from erroring at sh
 ## Commands
 
 ```
-gwt add [-b <start>] <branch>   create worktree from <start> (default HEAD), cd into it
-gwt go  [-b <start>] <branch>   cd into worktree if it exists; otherwise create it
+gwt add [-b <start>] [--bg] <branch>
+                                create worktree from <start> (default HEAD), cd into it
+gwt go  [-b <start>] [--bg] <branch>
+                                cd into worktree if it exists; otherwise create it
 gwt rm  <branch>                remove worktree; delete branch if merged; prune
 gwt checkout [-f] <branch>      checkout <branch> here; -f force-removes a worktree holding it
 gwt reset [-d]                  cd back to the main repo root; -d also removes the worktree you left
@@ -24,7 +26,8 @@ gwt sync [-n] [--force] [<branch>|--all]
                                 re-carry files from the main checkout into an existing worktree
 gwt include                     show what a worktree would inherit; changes nothing
 gwt init [--force]              wizard that writes this repo's .gwtrc
-gwt setup [--force]             re-run this repo's setup hook here
+gwt setup [--force] [--bg]      re-run this repo's setup hook here
+gwt setup attach|status         follow a background setup, or say where it stands
 gwt serve [stop|restart|status|logs [-f]|open]
                                 point this repo's single dev server at the current worktree
 gwt prune --merged [-n] [-f]    remove worktrees whose branch is merged or gone on origin
@@ -102,7 +105,8 @@ gwt_setup() {
 
 `gwt add` runs carry-over, then setup, then cds you in. A failing hook still lands you
 in the worktree and returns non-zero, so the failure is visible rather than silent.
-`--no-setup` skips it and `gwt setup` re-runs it on demand.
+`--no-setup` skips it and `gwt setup` re-runs it on demand. `--bg` hands the shell
+back without waiting; see below.
 
 `gwt_step` skips a step whose watched files are byte-identical to what was there the
 last time it succeeded, and records the new hash only on success. A step with no
@@ -118,6 +122,34 @@ removes it; it can never block the removal. Resolution is `<repo>/.gwtrc`, then
 **`.gwtrc` is executed as zsh, so gwt refuses to source one that git tracks.** A
 tracked config would run code from every `git pull`. Keep it untracked — gwt adds it
 to `.git/info/exclude` for you.
+
+## Setup in the background
+
+An install that takes a minute should not hold the shell for a minute. `--bg` starts
+the hook detached and hands you the worktree immediately; `GWT_SETUP_BG=1` in the
+`.gwtrc` makes that the default for a repo, and `--fg` overrides it for one command.
+
+```zsh
+gwt add --bg my-branch          # you are in the worktree; the install is running
+gwt setup status                # running for 1m20s (pid 43011)
+gwt setup attach                # watch it, ctrl-c to leave it running
+```
+
+`gwt setup attach` follows the run's output and returns its exit code, so a
+backgrounded hook is still something you can wait on and still something that reports
+failure. Ctrl-C only detaches you — it never reaches the hook. Attaching after the run
+has ended replays the log and reports how it went, and `gwt setup status` answers the
+same question in one line.
+
+The run is in its own session, so it survives the shell — and the terminal — that
+started it. Only one runs per worktree at a time; a second is refused with a pointer
+at the first. Removing a worktree stops a run still writing into it, the same way it
+stops a dev server pointed at it. Log and bookkeeping live in the worktree's own git
+directory next to the step cache, so git takes them away with the worktree.
+
+`gwt add --bg` cannot report a hook failure in its exit code, since it returns long
+before the hook is done. That is the trade: the shell comes back at once, and
+`gwt setup status` is where the outcome lives.
 
 ## Pruning
 
@@ -200,11 +232,11 @@ lib/gwt.zsh        dispatcher, shared helpers, exit-code table
 lib/config.zsh     .worktreeinclude and .gwtrc resolution
 lib/sync.zsh       carry-over of gitignored files into a fresh worktree
 lib/init.zsh       the 'gwt init' wizard and its stack detection
-lib/setup.zsh      .gwtrc hooks and the gwt_step cache
+lib/setup.zsh      .gwtrc hooks, the gwt_step cache, and background runs
 lib/server.zsh     the singleton dev server client
 lib/prune.zsh      branch classification for gwt prune
 completions/_gwt   zsh completion
-libexec/           gwt-serve-run, the systemd ExecStart target
+libexec/           gwt-serve-run (the systemd ExecStart target) and gwt-setup-run
 systemd/           the gwt-server@.service template
 install.sh         installs the launcher and the unit
 test/              destructive-path tests (harness.zsh, run.zsh, test_*.zsh)

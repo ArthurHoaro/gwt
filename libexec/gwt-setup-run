@@ -1,0 +1,32 @@
+#!/usr/bin/env zsh
+# What 'gwt add --bg' and 'gwt setup --bg' spawn. Output is already redirected to the
+# run log by the caller; the pid and the exit code are recorded so 'gwt setup attach'
+# can find this run and report on it long after the shell that started it is gone.
+
+emulate -L zsh
+
+main_root="$1" repo="$2" tree="$3" branch="$4" force="$5"
+[[ -n "$main_root" && -n "$repo" && -n "$tree" ]] \
+  || { print -ru2 -- "gwt-setup-run: usage: gwt-setup-run <main-root> <repo> <worktree> [branch] [force]"; exit 2 }
+[[ -d "$tree" ]] || { print -ru2 -- "gwt-setup-run: no such worktree: $tree"; exit 3 }
+
+# The whole library, not just the hook code: in the foreground a hook inherits the
+# interactive shell, so one that calls gwt itself has to keep working here.
+typeset -g _GWT_ROOT="${0:A:h:h}"
+for lib in "$_GWT_ROOT"/lib/*.zsh(N); do
+  source "$lib"
+done
+
+cd "$tree" || exit 3
+state="$(_gwt_state_dir)" || { print -ru2 -- "gwt-setup-run: $tree is not a git worktree"; exit 4 }
+mkdir -p "$state" || exit 4
+print -r -- "$$" > "$state/setup.pid"
+
+# Nothing downstream of here is a tty, so installers emit no colour at all unless
+# told to. Same convention as the dev server launcher.
+export FORCE_COLOR="${FORCE_COLOR:-1}" CLICOLOR_FORCE="${CLICOLOR_FORCE:-1}"
+
+_gwt_run_setup "$main_root" "$repo" "$tree" "$branch" "$force"
+rc=$?
+print -r -- "$rc" > "$state/setup.status"
+exit $rc

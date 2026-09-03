@@ -40,6 +40,9 @@
 #  43   sync: --all takes no branch argument
 #  50   setup: refusing to source a .gwtrc that git tracks
 #  51   setup: hook returned non-zero
+#  52   setup: unknown 'gwt setup' subcommand
+#  53   setup: a run is already in progress in this worktree
+#  54   setup: nothing to attach to
 #  60   serve: no GWT_SERVER (or GWT_SERVER_PORT) configured
 #  61   serve: not inside a worktree
 #  62   serve: the port is held by a process that is not ours
@@ -159,7 +162,7 @@ function gwt {
 
   local cmd="$1"; shift
 
-  local branch="" start_point="" delete_tree="" force="" dry_run="" all="" no_setup="" merged=""
+  local branch="" start_point="" delete_tree="" force="" dry_run="" all="" no_setup="" merged="" bg=""
   while (( $# )); do
     case "$1" in
       -b) (( $# >= 2 )) || { print -r -- "error: -b requires a start point" >&2; return 22; }
@@ -169,6 +172,8 @@ function gwt {
       -n|--dry-run) dry_run=1; shift ;;
       --all) all=1; shift ;;
       --no-setup) no_setup=1; shift ;;
+      --bg|--background) bg=bg; shift ;;
+      --fg|--foreground) bg=fg; shift ;;
       --merged) merged=1; shift ;;
        *) branch="$1"; shift ;;
     esac
@@ -176,8 +181,10 @@ function gwt {
 
   local usage="
 usage:
-  gwt add [-b <start>] <branch>  # create worktree from <start> (default: HEAD), cd into it
-  gwt go  [-b <start>] <branch>  # cd into worktree if exists; otherwise create from <start>
+  gwt add [-b <start>] [--bg|--fg] <branch>
+                                 # create worktree from <start> (default: HEAD), cd into it
+  gwt go  [-b <start>] [--bg|--fg] <branch>
+                                 # cd into worktree if exists; otherwise create from <start>
   gwt rm  <branch>               # remove worktree; delete branch if merged; prune
   gwt checkout [-f] <branch>     # checkout <branch> here; -f force-removes a worktree holding it
   gwt reset [-d]                 # cd back to main repo root (non-tree); -d also removes the worktree you left
@@ -186,7 +193,9 @@ usage:
                                  # re-carry files from the main checkout into an existing worktree
   gwt include                    # show what a worktree would inherit; changes nothing
   gwt init [--force]             # wizard: write this repo's .gwtrc; --force overwrites an existing one
-  gwt setup [--force]            # re-run this repo's setup hook here; --force ignores the step cache
+  gwt setup [--force] [--bg|--fg]
+                                 # re-run this repo's setup hook here; --force ignores the step cache
+  gwt setup attach|status        # follow a background setup, or say where it stands
   gwt serve [stop|restart|status|logs [-f]|open]
                                  # point this repo's single dev server at the current worktree
   gwt prune --merged [-n] [-f]   # remove worktrees whose branch is merged or gone on origin
@@ -315,7 +324,7 @@ usage:
       local here
       here="$(git rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
       [[ -n "$here" ]] || { print -r -- "error: not in a worktree" >&2; return 2 }
-      _gwt_run_setup "$MAIN_ROOT" "$REPO" "$here" "$(_gwt_current_branch)" "$force"
+      _gwt_setup_cmd "$branch" "$MAIN_ROOT" "$REPO" "$here" "$force" "$bg"
       return $?
       ;;
 
@@ -376,6 +385,7 @@ usage:
 
       # Detached HEAD gives `gwt rm` no branch to resolve; remove the path directly.
       if [[ -z "$from_branch" ]]; then
+        _gwt_setup_release "$from_wt"
         _gwt_server_release "$REPO" "$from_wt"
         git worktree remove "$from_wt" >/dev/null || { print -r -- "error: git worktree remove failed" >&2; return 24; }
         git worktree prune >/dev/null 2>&1 || true
@@ -403,7 +413,7 @@ usage:
         [[ -n "$picked" ]] || return 0
         dest="${${picked#*$'\t'}%%$'\t'*}"
         if [[ -z "$dest" ]]; then
-          gwt go ${no_setup:+--no-setup} "${picked##*$'\t'}"
+          gwt go ${no_setup:+--no-setup} ${bg:+--$bg} "${picked##*$'\t'}"
           return $?
         fi
         cd "$dest" || { print -r -- "error: failed to cd to $dest" >&2; return 5; }
@@ -450,7 +460,7 @@ usage:
       if git show-ref --verify --quiet "refs/heads/$branch"; then
         git worktree add "$DIR" "$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 10; }
         _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
-        [[ -z "$no_setup" ]] && { _gwt_run_setup "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" || setup_rc=$? }
+        [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 11; }
         return $setup_rc
       fi
@@ -460,7 +470,7 @@ usage:
         git worktree add -b "$branch" "$DIR" "$REMOTE/$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 12; }
         git -C "$DIR" branch --set-upstream-to="$REMOTE/$branch" "$branch" >/dev/null 2>&1 || true
         _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
-        [[ -z "$no_setup" ]] && { _gwt_run_setup "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" || setup_rc=$? }
+        [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 13; }
         return $setup_rc
       fi
@@ -468,7 +478,7 @@ usage:
       # Else: create new branch from start_point (or HEAD if omitted)
       git worktree add -b "$branch" "$DIR" ${start_point:+"$start_point"} >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
       _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
-      [[ -z "$no_setup" ]] && { _gwt_run_setup "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" || setup_rc=$? }
+      [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
       cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 15; }
       return $setup_rc
       ;;
@@ -513,6 +523,7 @@ usage:
             [[ -n "$dirty_out" ]] && print -r -- "⚠️  $wt has ${#${(f)dirty_out}} uncommitted change(s); they will be lost" >&2
           fi
 
+          _gwt_setup_release "$wt"
           print -r -- "🗑️  removing worktree $wt" >&2
           if ! rm_err="$(git worktree remove --force "$wt" 2>&1)"; then
             # A locked worktree needs a second --force; anything else is a real failure.
@@ -590,6 +601,7 @@ usage:
 
       [[ -d "$target" ]] || { print -r -- "error: worktree directory not found: $target" >&2; return 19; }
 
+      _gwt_setup_release "$target"
       _gwt_server_release "$REPO" "$target"
       _gwt_run_teardown "$MAIN_ROOT" "$REPO" "$target" "$branch"
 
