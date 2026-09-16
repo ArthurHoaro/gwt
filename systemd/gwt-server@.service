@@ -5,8 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/gwt-serve-run %i
-EnvironmentFile=-%h/.local/state/gwt/%i/server.env
+ExecStart="@GWT_SERVE_RUN@" %i
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
@@ -15,7 +14,9 @@ SuccessExitStatus=0 143
 # holding the port. Reap the whole cgroup.
 KillMode=control-group
 Environment=HOME=%h
-Environment=PATH=@GWT_PATH@
+Environment="PATH=@GWT_PATH@"
+Environment="XDG_CONFIG_HOME=@GWT_CONFIG_HOME@"
+Environment="XDG_STATE_HOME=@GWT_STATE_HOME@"
 
 [Install]
 WantedBy=default.target

@@ -27,6 +27,7 @@ typeset -g STUB_PORT_HOLDER=""
 function _gwt_port_holder { print -r -- "$STUB_PORT_HOLDER" }
 function _gwt_pid_is_ours { [[ "$STUB_HOLDER_IS_OURS" == 1 ]] }
 function _gwt_pid_cmdline { print -r -- "next-dev --port 9000" }
+function _gwt_open_url { print -r -- "open $1" >> "$sysctl_log" }
 
 sysctl_calls() { grep -c . "$sysctl_log" }
 restarts()    { grep -c '^restart ' "$sysctl_log" }
