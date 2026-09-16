@@ -187,7 +187,7 @@ function _gwt_pick {
 
 unalias gwt 2>/dev/null
 function gwt {
-  local BASE="${GWT_BASE:-/home/arthur/projects/codesignal/tree-codesignal}"
+  local BASE="${GWT_BASE:-${XDG_DATA_HOME:-$HOME/.local/share}/gwt/worktrees}"
   local REMOTE="origin"
 
   local cmd="$1"; shift

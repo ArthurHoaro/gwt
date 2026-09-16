@@ -85,10 +85,21 @@ function _gwt_copy_pruned {
     return 0
   fi
 
-  cp $_GWT_CP_FLAGS -- "$src" "$dst"
+  cp $_GWT_CP_FLAGS "$src" "$dst"
 }
 
-function _gwt_entry_size { du -sh -- "$1" 2>/dev/null | cut -f1 }
+function _gwt_entry_size { du -sh "$1" 2>/dev/null | cut -f1 }
+
+function _gwt_total_size {
+  du -sk "$@" 2>/dev/null | awk '
+    { total += $1 }
+    END {
+      if (total >= 1048576) printf "%.1fG", total / 1048576
+      else if (total >= 1024) printf "%.1fM", total / 1024
+      else printf "%dK", total
+    }
+  '
+}
 
 # mode: create (fresh worktree, never clobber) | sync (refresh an existing one)
 function _gwt_carry_over {
@@ -208,7 +219,7 @@ function _gwt_include_report {
   fi
 
   if (( ${#paths} )); then
-    print -r -- "total: $(du -shc -- "${paths[@]}" 2>/dev/null | tail -1 | cut -f1) across ${#paths} path(s)"
+    print -r -- "total: $(_gwt_total_size "${paths[@]}") across ${#paths} path(s)"
   fi
   return 0
 }

@@ -11,7 +11,10 @@ typeset -g GWT_RC GWT_OUT GWT_ERR
 
 gwt_test_init() {
   GWT_TEST_NAME="$1"
-  GWT_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/gwt-test.XXXXXXXX")"
+  local temp_root="${TMPDIR:-/tmp}"
+  temp_root="${temp_root%/}"
+  GWT_TEST_ROOT="$(mktemp -d "$temp_root/gwt-test.XXXXXXXX")"
+  GWT_TEST_ROOT="${GWT_TEST_ROOT:A}"
 
   # These tests call `git worktree remove --force` and `git branch -d`. If the sandbox
   # is not a temp dir we created ourselves, they must not run at all.
@@ -24,21 +27,23 @@ gwt_test_init() {
   export GWT_BASE="$GWT_TEST_ROOT/trees"
   export GIT_CONFIG_NOSYSTEM=1
   export HOME="$GWT_TEST_ROOT/home"
+  unset FORCE_COLOR CLICOLOR_FORCE
   unset XDG_CONFIG_HOME XDG_STATE_HOME
   mkdir -p "$HOME"
 
   source "$GWT_TEST_HOME/../gwt.plugin.zsh"
+  function _gwt_supervisor { print -r -- systemd }
 }
 
 # The name prefix ties the path to our own mktemp template, so neither the guard
 # nor the cleanup can ever match a directory we did not create.
 _gwt_test_is_sandbox() {
   setopt local_options extended_glob
-  local d root="$1"
+  local d root="${1:A}"
   local -a allowed=(/tmp /var/tmp)
   [[ -n "$TMPDIR" ]] && allowed+=("${TMPDIR:A}")
   for d in $allowed; do
-    [[ "$root" == "$d"/gwt-test.[A-Za-z0-9]## ]] && return 0
+    [[ "$root" == "${d:A}"/gwt-test.[A-Za-z0-9]## ]] && return 0
   done
   return 1
 }

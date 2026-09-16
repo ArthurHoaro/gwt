@@ -1,12 +1,22 @@
 # Setup hooks. .gwtrc is sourced in a subshell so nothing it defines — variables,
 # gwt_setup, anything else — reaches the interactive shell that called gwt.
 
+function _gwt_sha256 {
+  if (( $+commands[sha256sum] )); then
+    sha256sum "$@"
+  elif (( $+commands[shasum] )); then
+    shasum -a 256 "$@"
+  else
+    return 1
+  fi
+}
+
 function _gwt_hash_files {
-  (( $+commands[sha256sum] )) || return 1
+  (( $+commands[sha256sum] || $+commands[shasum] )) || return 1
   local f
   for f in "$@"; do
-    if [[ -f "$f" ]]; then sha256sum -- "$f"; else print -r -- "absent $f"; fi
-  done | sha256sum | cut -d' ' -f1
+    if [[ -f "$f" ]]; then _gwt_sha256 "$f"; else print -r -- "absent $f"; fi
+  done | _gwt_sha256 | cut -d' ' -f1
 }
 
 # The optional argument names a worktree; with none, the one the caller stands in.
@@ -114,8 +124,8 @@ function _gwt_run_teardown {
 function _gwt_setup_alive {
   local pid="$1"
   [[ -n "$pid" && "$pid" == <-> ]] || return 1
-  [[ -r /proc/$pid/cmdline ]] || return 1
-  _gwt_pid_cmdline "$pid" | grep -q gwt-setup-run
+  kill -0 "$pid" 2>/dev/null || return 1
+  ps -p "$pid" -o command= 2>/dev/null | grep -q '[g]wt-setup-run'
 }
 
 # Where the background run stands, as a word plus its detail:
@@ -181,7 +191,11 @@ function _gwt_setup_spawn {
   date +%s > "$d/setup.started"
 
   local -a launch=( "$runner" "$main_root" "$repo" "$tree" "$branch" "$force" )
-  (( $+commands[setsid] )) && launch=( setsid --fork "${launch[@]}" )
+  if (( $+commands[setsid] )); then
+    launch=( setsid --fork "${launch[@]}" )
+  elif (( $+commands[nohup] )); then
+    launch=( nohup "${launch[@]}" )
+  fi
   "${launch[@]}" </dev/null >>"$d/setup.log" 2>&1 &!
 
   print -ru2 -- "gwt: setup running in the background — 'gwt setup attach' to follow it"
@@ -222,9 +236,17 @@ function _gwt_setup_attach {
 
   print -ru2 -- "gwt: following setup (pid $pid) — ctrl-c detaches, it keeps running"
   trap 'detached=1' INT
-  # --pid ends the follow the moment the runner exits: that is what makes this a
-  # foreground run rather than an endless tail.
-  tail -n +1 -f --pid="$pid" -- "$log"
+  local -i shown=0 count=0
+  while [[ -z "$detached" ]] && _gwt_setup_alive "$pid"; do
+    count="$(wc -c < "$log")"
+    (( count > shown )) && {
+      tail -c "+$(( shown + 1 ))" "$log"
+      shown=$count
+    }
+    sleep 0.1
+  done
+  count="$(wc -c < "$log")"
+  (( count > shown )) && tail -c "+$(( shown + 1 ))" "$log"
   trap - INT
   [[ -n "$detached" ]] && {
     print -ru2 -- "gwt: detached; 'gwt setup attach' comes back to it"
@@ -278,8 +300,20 @@ function _gwt_setup_release {
   [[ -r "$d/setup.pid" ]] && pid="$(<$d/setup.pid)"
   _gwt_setup_alive "$pid" || return 0
   print -ru2 -- "■ stopping the setup still running in ${tree:t} (pid $pid)"
-  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+  if [[ "$OSTYPE" == darwin* ]]; then
+    _gwt_kill_process_tree "$pid"
+  else
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+  fi
   return 0
+}
+
+function _gwt_kill_process_tree {
+  local pid="$1" child
+  for child in ${(f)"$(ps -axo pid=,ppid= | awk -v parent="$pid" '$2 == parent { print $1 }')"}; do
+    _gwt_kill_process_tree "$child"
+  done
+  kill -TERM "$pid" 2>/dev/null
 }
 
 function _gwt_setup_wants_bg {
