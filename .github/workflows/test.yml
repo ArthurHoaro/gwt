@@ -1,0 +1,27 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes zsh
+      - name: Check syntax
+        run: zsh -n gwt.plugin.zsh lib/*.zsh install.sh libexec/* test/*.zsh
+      - name: Run tests
+        run: zsh test/run.zsh

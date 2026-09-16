@@ -5,11 +5,21 @@ A zsh helper for git worktrees. Each repo gets a folder of worktrees at
 
 ## Install
 
+Requirements: zsh 5.8 or newer and Git 2.31 or newer. Linux and macOS are
+supported. The optional dev-server command uses a systemd user service on Linux
+and a launchd agent on macOS.
+
 ```zsh
-[ -f ~/projects/ai/gwt/gwt.plugin.zsh ] && source ~/projects/ai/gwt/gwt.plugin.zsh
+git clone https://github.com/ArthurHoaro/gwt.git
+cd gwt
+./install.sh
 ```
 
-The `-f` guard keeps a machine that has not cloned this repo from erroring at shell startup.
+The installer prints the exact line to add to your `.zshrc`, using the directory
+where you cloned gwt. The `-f` guard in that line keeps shell startup safe if the
+clone is later moved or removed. Restart zsh after adding it. The server launcher
+defaults to `~/.local/bin`; set `GWT_BIN_DIR` when running the installer and before
+sourcing the plugin to use another location.
 
 ## Commands
 
@@ -37,7 +47,9 @@ gwt prune --merged [-n] [-f]    remove worktrees whose branch is merged or gone 
 not. It lists the worktrees that already exist, then every branch that has none (local
 first, then origin-only, most recent first); picking one of those creates its worktree.
 
-`GWT_BASE` sets where worktrees live. The remote is `origin`.
+By default, worktrees live under
+`${XDG_DATA_HOME:-$HOME/.local/share}/gwt/worktrees`. `GWT_BASE` overrides that
+location. The remote is `origin`.
 
 ## Where a new branch starts
 
@@ -185,11 +197,12 @@ pointed at a removed tree is stopped first.
 
 ## Dev server
 
-One server per repo, retargetable at any worktree, supervised by systemd. It never
-starts on its own: `gwt serve` is the only thing that starts or moves it.
+One server per repo, retargetable at any worktree, supervised by systemd on Linux
+and launchd on macOS. It never starts on its own: `gwt serve` is the only thing
+that starts or moves it.
 
 ```zsh
-./install.sh          # symlinks the launcher, installs the unit, daemon-reload
+./install.sh          # installs server support for this operating system
 ```
 
 Then, per repo, in an untracked `.gwtrc`:
@@ -204,28 +217,26 @@ status` says which worktree owns it and whether the port is actually live, `gwt 
 logs -f` follows the journal, and `gwt list` marks the serving worktree with `▶`
 alongside dirty and ahead/behind columns.
 
-Logs keep the dev server's colors. A process writing to the journal has no terminal,
-so most tools turn color off: the launcher sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1`
-for the server, and the log reader asks for fields the journal would otherwise hand
-back as unprintable. Override `FORCE_COLOR`, or `export NO_COLOR=1`, in your `.gwtrc`
-to change that; either takes effect on the next `gwt serve restart`.
+Logs keep the dev server's colors. A supervised process has no terminal, so most
+tools turn color off: the launcher sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1`.
+Override `FORCE_COLOR`, or `export NO_COLOR=1`, in your `.gwtrc` to change that;
+either takes effect on the next `gwt serve restart`.
 
-Logs are also trimmed. Every line out of the journal carries the same date, hostname
-and launcher pid ahead of the message, which for a log already filtered to one unit is
-60 characters of nothing: only the clock is kept, dimmed, when you are reading on a
-terminal. `journalctl --user -u gwt-server@<repo>.service` still gives the raw view.
+On Linux, repeated journal prefixes are trimmed to the clock. The raw log remains
+available through `journalctl --user -u gwt-server@<repo>.service`. On macOS, launchd
+writes the raw log to `~/.local/state/gwt/<repo>/server.log` (or the equivalent
+under `$XDG_STATE_HOME`).
 
-Two things keep it from going wrong. Before starting, gwt checks the port: if it is
-held by a process that is not in this unit's cgroup, it refuses and prints the
-offending command line rather than letting systemd restart-loop against it. And
-removing a worktree the server points at stops the server first, so nothing is left
-serving a directory that no longer exists.
+Two things keep it from going wrong. Before starting, gwt checks the port: if another
+process owns it, gwt refuses and prints the offending command line rather than
+restart-looping. And removing a worktree the server points at stops the server first,
+so nothing is left serving a directory that no longer exists.
 
-The unit uses `KillMode=control-group`, because `next dev` and `concurrently` spawn
-children that would otherwise survive a stop and keep holding the port. `install.sh`
-bakes your current `PATH` into the unit: systemd starts with almost nothing, and zsh
-does not read `.zshrc` for a non-interactive shell, so node would not otherwise
-resolve. Re-run `install.sh` if your node version changes.
+On Linux, the unit uses `KillMode=control-group`, because `next dev` and
+`concurrently` spawn children that would otherwise survive a stop and keep holding
+the port. The installed service configuration preserves your current `PATH`, since
+service managers do not read `.zshrc`. Re-run `install.sh` after changing the tool
+paths your dev server needs.
 
 Set `GWT_SERVER_HINT=1` before sourcing the plugin to get a one-line note when you cd
 into a worktree that is not the server's target. It is off by default because it costs
@@ -237,10 +248,9 @@ a git call on every directory change.
 zsh test/run.zsh
 ```
 
-Coverage is deliberately narrow: the destructive paths only — `rm`, `checkout -f`,
-and `reset -d`, the ones that call `git worktree remove --force` and `git branch -d`.
-Every test builds throwaway repos in a temp dir; the harness refuses to run at all
-unless its sandbox is a directory it created itself under a temp root.
+The same suite runs on Linux and macOS in CI. Every test builds throwaway repos in a
+temp directory; the harness refuses to run at all unless its sandbox is a directory
+it created itself under a temp root.
 
 `GWT_TEST_KEEP=1` leaves the sandbox behind for inspection.
 
@@ -256,10 +266,14 @@ lib/setup.zsh      .gwtrc hooks, the gwt_step cache, and background runs
 lib/server.zsh     the singleton dev server client
 lib/prune.zsh      branch classification for gwt prune
 completions/_gwt   zsh completion
-libexec/           gwt-serve-run (the systemd ExecStart target) and gwt-setup-run
-systemd/           the gwt-server@.service template
-install.sh         installs the launcher and the unit
+libexec/           supervised dev-server and background-setup launchers
+systemd/           Linux gwt-server@.service template
+install.sh         installs systemd or launchd server support
 test/              destructive-path tests (harness.zsh, run.zsh, test_*.zsh)
 ```
 
 Exit codes are documented at the top of `lib/gwt.zsh`.
+
+## License
+
+MIT
