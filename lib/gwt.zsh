@@ -18,7 +18,7 @@
 #  13   add|go: cd after worktree add (remote) failed
 #  14   add|go: worktree add (new branch) failed
 #  15   add|go: cd after worktree add (new branch) failed
-#  16   rm: branch argument missing
+#  16   rm: no branch given, and no worktree to pick
 #  17   rm: refusing (current dir is inside that worktree)
 #  18   rm: refusing (branch is current branch here)
 #  19   rm: worktree directory not found
@@ -34,7 +34,7 @@
 #  29   checkout: no such branch (not local, not on remote)
 #  30   checkout: git checkout failed
 #  31   checkout: branch held by a worktree (retry with -f)
-#  40   sync: not inside a worktree and no branch given
+#  40   sync: not inside a worktree, and no worktree to pick
 #  41   sync: no worktree found for that branch
 #  42   sync: one or more paths failed to carry
 #  43   sync: --all takes no branch argument
@@ -171,11 +171,12 @@ function _gwt_branch_rows {
 
 # fzf when it is there, zsh's select when it is not. Tests replace this wholesale.
 function _gwt_pick {
+  local prompt="$1"; shift
   local -a rows=("$@")
   (( ${#rows} )) || return 1
   if (( $+commands[fzf] )); then
     print -rl -- "${rows[@]}" \
-      | fzf --delimiter=$'\t' --with-nth=1 --no-multi --height=40% --reverse --prompt='go> '
+      | fzf --delimiter=$'\t' --with-nth=1 --no-multi --height=40% --reverse --prompt="$prompt"
     return $?
   fi
   local choice
@@ -183,6 +184,23 @@ function _gwt_pick {
     [[ -n "$choice" ]] && { print -r -- "${rows[$REPLY]}"; return 0 }
   done
   return 1
+}
+
+# The worktrees a command could act on: never the main checkout, never the one you
+# are standing in, and for a command that names a branch, nothing detached.
+function _gwt_pickable_rows {
+  local main_root="$1" repo="$2" need_branch="$3" row wt br here_real wt_real
+  here_real="${PWD:A}"
+  for row in ${(f)"$(_gwt_worktree_rows "$main_root" "$repo")"}; do
+    wt="${${row#*$'\t'}%%$'\t'*}"
+    br="${row##*$'\t'}"
+    [[ "$wt" == "$main_root" ]] && continue
+    [[ -n "$need_branch" && "$br" == "(detached)" ]] && continue
+    wt_real="$wt"
+    [[ -d "$wt" ]] && wt_real="${wt:A}"
+    [[ "$here_real/" == "$wt_real/"* ]] && continue
+    print -r -- "$row"
+  done
 }
 
 unalias gwt 2>/dev/null
@@ -215,12 +233,13 @@ usage:
                                  # create worktree from <start> (default: the repo's default branch), cd into it
   gwt go  [-b <start>] [--bg|--fg] <branch>
                                  # cd into worktree if exists; otherwise create from <start>
-  gwt rm  <branch>               # remove worktree; delete branch if merged; prune
+  gwt rm  [<branch>]             # remove worktree; delete branch if merged; prune. bare: picker
   gwt checkout [-f] <branch>     # checkout <branch> here; -f force-removes a worktree holding it
   gwt reset [-d]                 # cd back to main repo root (non-tree); -d also removes the worktree you left
   gwt list                       # list all worktrees for current repo
   gwt sync [-n] [--force] [<branch>|--all]
                                  # re-carry files from the main checkout into an existing worktree
+                                 # bare: this worktree, or a picker from outside one
   gwt include                    # show what a worktree would inherit; changes nothing
   gwt init [--force]             # wizard: write this repo's .gwtrc; --force overwrites an existing one
   gwt setup [--force] [--bg|--fg]
@@ -271,7 +290,7 @@ usage:
       }
 
       local here_real cb
-      here_real="$(pwd -P)"
+      here_real="${PWD:A}"
       cb="$(_gwt_current_branch)"
 
       local -a candidates skipped
@@ -281,7 +300,7 @@ usage:
         wt="${${row#*$'\t'}%%$'\t'*}"
         reason="${row##*$'\t'}"
         wt_real="$wt"
-        [[ -d "$wt" ]] && wt_real="$(cd "$wt" && pwd -P)"
+        [[ -d "$wt" ]] && wt_real="${wt:A}"
         if [[ "$here_real/" == "$wt_real/"* || "$cb" == "$b" ]]; then
           skipped+=( "$b (you are in it)" )
           continue
@@ -378,10 +397,20 @@ usage:
         local here
         here="$(git rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
         if [[ -z "$here" || "$here" == "$MAIN_ROOT" ]]; then
-          print -r -- "error: not inside a worktree; name a branch or use --all" >&2
-          return 40
+          # Nothing to infer from outside a worktree, so ask instead of refusing.
+          local -a rows
+          rows=( ${(f)"$(_gwt_pickable_rows "$MAIN_ROOT" "$REPO")"} )
+          (( ${#rows} )) || {
+            print -r -- "error: no worktree to sync; name a branch or use --all" >&2
+            return 40
+          }
+          local picked
+          picked="$(_gwt_pick 'sync> ' "${rows[@]}")" || return 0
+          [[ -n "$picked" ]] || return 0
+          targets=( "${${picked#*$'\t'}%%$'\t'*}" )
+        else
+          targets=( "$here" )
         fi
-        targets=( "$here" )
       fi
 
       (( ${#targets} )) || { print -r -- "note: no worktrees to sync" >&2; return 0 }
@@ -439,7 +468,7 @@ usage:
         )
         (( ${#rows} )) || { print -r -- "error: nothing to choose from" >&2; return 71 }
         local picked dest
-        picked="$(_gwt_pick "${rows[@]}")" || return 0
+        picked="$(_gwt_pick 'go> ' "${rows[@]}")" || return 0
         [[ -n "$picked" ]] || return 0
         dest="${${picked#*$'\t'}%%$'\t'*}"
         if [[ -z "$dest" ]]; then
@@ -544,7 +573,7 @@ usage:
         fi
 
         local here_real wt wt_real dirty_out rm_err parent
-        here_real="$(pwd -P)"
+        here_real="${PWD:A}"
 
         for wt in ${(f)holders_out}; do
           if [[ "$wt" == "$MAIN_ROOT" ]]; then
@@ -553,7 +582,7 @@ usage:
           fi
 
           if [[ -d "$wt" ]]; then
-            wt_real="$(cd "$wt" && pwd -P)"
+            wt_real="${wt:A}"
             if [[ "$here_real/" == "$wt_real/"* ]]; then
               print -r -- "error: refusing: you're inside $wt_real (cd out first)" >&2
               return 27
@@ -604,7 +633,18 @@ usage:
       ;;
 
     rm)
-      [[ -z "$branch" ]] && { print -r -- "$usage" >&2; return 16; }
+      # bare `gwt rm` picks the worktree to remove, then goes through the named path
+      # so every refusal below still applies to what was picked.
+      if [[ -z "$branch" ]]; then
+        local -a rows
+        rows=( ${(f)"$(_gwt_pickable_rows "$MAIN_ROOT" "$REPO" branch)"} )
+        (( ${#rows} )) || { print -r -- "error: no worktree to remove" >&2; return 16 }
+        local picked
+        picked="$(_gwt_pick 'rm> ' "${rows[@]}")" || return 0
+        [[ -n "$picked" ]] || return 0
+        gwt rm "${picked##*$'\t'}"
+        return $?
+      fi
 
       git worktree prune >/dev/null 2>&1 || true
 
@@ -621,9 +661,9 @@ usage:
 
       # 🔒 Refuse if you're inside that worktree dir
       local pwd_real dir_real
-      pwd_real="$(pwd -P)"
+      pwd_real="${PWD:A}"
       if [[ -d "$target" ]]; then
-        dir_real="$(cd "$target" && pwd -P)"
+        dir_real="${target:A}"
         if [[ "$pwd_real/" == "$dir_real/"* ]]; then
           print -r -- "error: refusing: you're inside $dir_real (cd out first)" >&2
           return 17

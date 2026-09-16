@@ -87,9 +87,12 @@ run_gwt sync --all feat-a
 assert_rc 43 "sync: --all rejects a branch argument"
 run_gwt sync no-such-branch
 assert_rc 41 "sync: unknown branch"
+# nothing to guess from the main repo, so it asks; cancelling changes nothing
 cd "$repo"
+function _gwt_pick { return 130 }
 run_gwt sync
-assert_rc 40 "sync: refuses to guess from the main repo"
+assert_rc 0 "sync: cancelling the picker from the main repo is not an error"
+unfunction _gwt_pick
 
 # from inside a worktree, no argument needed
 rm -f "$wt/.env"

@@ -30,7 +30,7 @@ FZF
 chmod +x "$stub/fzf"
 PATH="$stub:$PATH"
 rehash
-picked="$(_gwt_pick "${rows[@]}")"
+picked="$(_gwt_pick 'go> ' "${rows[@]}")"
 assert_eq "${rows[1]}" "$picked" "pick: fzf receives the rows and its choice comes back"
 
 # bare `gwt go` cds to whatever the picker returned

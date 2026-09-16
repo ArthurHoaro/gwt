@@ -28,7 +28,7 @@ gwt add [-b <start>] [--bg] <branch>
                                 create worktree from <start>, cd into it
 gwt go  [-b <start>] [--bg] <branch>
                                 cd into worktree if it exists; otherwise create it
-gwt rm  <branch>                remove worktree; delete branch if merged; prune
+gwt rm  [<branch>]              remove worktree; delete branch if merged; prune
 gwt checkout [-f] <branch>      checkout <branch> here; -f force-removes a worktree holding it
 gwt reset [-d]                  cd back to the main repo root; -d also removes the worktree you left
 gwt list                        list all worktrees for the current repo
@@ -43,13 +43,29 @@ gwt serve [stop|restart|status|logs [-f]|open]
 gwt prune --merged [-n] [-f]    remove worktrees whose branch is merged or gone on origin
 ```
 
-`gwt go` with no branch opens a picker — fzf if you have it, a numbered menu if you do
-not. It lists the worktrees that already exist, then every branch that has none (local
-first, then origin-only, most recent first); picking one of those creates its worktree.
-
 By default, worktrees live under
 `${XDG_DATA_HOME:-$HOME/.local/share}/gwt/worktrees`. `GWT_BASE` overrides that
 location. The remote is `origin`.
+
+## Pickers
+
+A command that needs a worktree and was not told which one asks — fzf if you have it,
+a numbered menu if you do not. The rows are the `gwt list` rows, so what is dirty and
+what is ahead is visible in the list you are choosing from, and cancelling always does
+nothing.
+
+`gwt go` with no branch lists the worktrees that already exist, then every branch that
+has none (local first, then origin-only, most recent first); picking one of those
+creates its worktree.
+
+`gwt rm` with no branch lists the worktrees you could remove, then removes what you
+pick exactly as naming it would have — every refusal still applies, and a worktree
+with uncommitted work is still one git will not throw away. Never offered: the main
+checkout, the worktree you are standing in, and a detached one, which has no branch to
+name.
+
+`gwt sync` with no branch still means the worktree you are standing in. From outside
+one, where it used to have nothing to go on, it asks.
 
 ## Where a new branch starts
 
