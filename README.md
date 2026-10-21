@@ -76,7 +76,9 @@ the fetch that `gwt add` does first means it is the current tip, not a stale loc
 copy. The new branch gets no upstream from this: it is a start point, not something to
 track.
 
-`-b <start>` names any other base, `-b HEAD` included. To have every new branch start
+`-b <start>` names any other base, `-b HEAD` included. A branch you never checked out
+works too: with no local `feature-x`, `-b feature-x` means `origin/feature-x`, the way
+`git checkout feature-x` would. To have every new branch start
 where you stand, the way `git checkout -b` does, set the base yourself:
 
 ```zsh

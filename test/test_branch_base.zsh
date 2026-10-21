@@ -76,6 +76,32 @@ cd "$repo"
 GWT_NEW_BRANCH_BASE=side run_gwt add feat-h
 assert_eq "$stale_tip" "$(tip_of feat-h)" "env: the repo's rc wins over the environment"
 
+# --- a start point that only exists on the remote ------------------------------
+
+rm -f "$repo/.gwtrc"
+mk_unmerged_branch "$repo" stacked
+git -C "$repo" push -q origin stacked
+stacked_tip="$(git -C "$repo" rev-parse stacked)"
+git -C "$repo" branch -q -D stacked
+
+cd "$repo"
+run_gwt add -b stacked feat-i
+assert_rc 0 "add -b: a branch only on the remote is a valid start point"
+assert_eq "$stacked_tip" "$(tip_of feat-i)" "add -b: it starts at the remote branch"
+assert_err_has "branching 'feat-i' off origin/stacked" "add -b: says it used the remote branch"
+
+cd "$repo"
+GWT_NEW_BRANCH_BASE=stacked run_gwt add feat-j
+assert_eq "$stacked_tip" "$(tip_of feat-j)" "env: a base only on the remote resolves the same way"
+
+git -C "$repo" push -q origin "${origin_tip}:refs/heads/side"
+cd "$repo"
+run_gwt add -b side feat-k
+assert_eq "$side_tip" "$(tip_of feat-k)" "add -b: a local branch wins over the remote one"
+[[ "$GWT_ERR" == *"branching 'feat-k'"* ]] \
+  && _fail "add -b: a start point git resolves says nothing" "note was printed" \
+  || _ok "add -b: a start point git resolves says nothing"
+
 # --- branches that already exist are untouched by any of it -------------------
 
 rm -f "$repo/.gwtrc"

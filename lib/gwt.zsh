@@ -83,13 +83,24 @@ function _gwt_new_branch_base {
   local main_root="$1" repo="$2" remote="$3" base default
   base="$(_gwt_config_value "$main_root" "$repo" GWT_NEW_BRANCH_BASE 2>/dev/null)"
   [[ -n "$base" ]] || base="$GWT_NEW_BRANCH_BASE"
-  [[ -n "$base" ]] && { print -r -- "$base"; return 0 }
+  [[ -n "$base" ]] && { _gwt_start_point "$base" "$remote"; return 0 }
 
   default="$(_gwt_default_branch)" || { print -r -- HEAD; return 0 }
   # add and go fetch first, so the remote-tracking ref is the fresher of the two.
   git show-ref --verify --quiet "refs/remotes/$remote/$default" \
     && { print -r -- "$remote/$default"; return 0 }
   print -r -- "$default"
+}
+
+# A start point named after a branch that exists only on the remote. Git guesses
+# <remote>/<name> for a checkout, never for a start point, so we do it here.
+function _gwt_start_point {
+  local start="$1" remote="$2"
+  if ! git rev-parse --verify --quiet "$start^{commit}" >/dev/null \
+      && git show-ref --verify --quiet "refs/remotes/$remote/$start"; then
+    start="$remote/$start"
+  fi
+  print -r -- "$start"
 }
 
 # Where the branch is actually checked out (if anywhere).
@@ -541,6 +552,9 @@ usage:
         # which is never what a new branch wants.
         add_opts=( --no-track )
         [[ "$base" == HEAD ]] || print -r -- "note: branching '$branch' off $base" >&2
+      else
+        base="$(_gwt_start_point "$base" "$REMOTE")"
+        [[ "$base" == "$start_point" ]] || print -r -- "note: branching '$branch' off $base" >&2
       fi
       git worktree add "${add_opts[@]}" -b "$branch" "$DIR" "$base" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
       _gwt_populate "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "$bg" "$no_setup" || setup_rc=$?
