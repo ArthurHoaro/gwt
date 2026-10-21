@@ -85,6 +85,34 @@ assert_content "$marker" "ran" "add --fg: the hook is done before add returns"
 c="$(state_of "$(wt_path "$repo" feat-c)")"
 assert_missing "$c/setup.log" "add --fg: nothing is recorded as a background run"
 
+# --- a background add leaves the heavy carry to the background run ---------
+
+write_include "$repo" '.env.local' 'deps/'
+print -r -- "SECRET=1" > "$repo/.env.local"
+mkdir -p "$repo/deps/pkg" && print -r -- "x" > "$repo/deps/pkg/index.js"
+write_gwtrc "$repo" 'GWT_SETUP_BG=1' \
+  "gwt_setup() { [[ -f deps/pkg/index.js ]] && print -r -- deps-ready >> $marker }"
+
+: > "$marker"
+mk_branch "$repo" feat-g
+cd "$repo"
+run_gwt add feat-g
+g="$(wt_path "$repo" feat-g)"
+assert_rc 0 "add --bg carry: returns straight away"
+assert_exists "$g/.env.local" "add --bg carry: files are carried before add returns"
+wait_for "$(state_of "$g")/setup.status" || _fail "add --bg carry: the background run finishes" "timed out"
+assert_exists "$g/deps/pkg/index.js" "add --bg carry: directories are carried by the background run"
+assert_content "$marker" "deps-ready" "add --bg carry: directories land before the hook runs"
+
+: > "$marker"
+mk_branch "$repo" feat-h
+cd "$repo"
+run_gwt add --fg feat-h
+assert_exists "$(wt_path "$repo" feat-h)/deps/pkg/index.js" "add --fg carry: directories are carried before add returns"
+assert_content "$marker" "deps-ready" "add --fg carry: the hook sees them"
+
+rm -rf "$repo/.env.local" "$repo/deps" "$repo/.worktreeinclude"
+
 # --- removing a worktree stops the run still writing into it --------------
 
 write_gwtrc "$repo" 'gwt_setup() { gwt_step slow -- sh -c "sleep 30" }'

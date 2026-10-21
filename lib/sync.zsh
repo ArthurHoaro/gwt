@@ -102,8 +102,9 @@ function _gwt_total_size {
 }
 
 # mode: create (fresh worktree, never clobber) | sync (refresh an existing one)
+# part: files | dirs limits the carry to one kind of entry; empty carries both.
 function _gwt_carry_over {
-  local src="$1" dst="$2" repo="$3" mode="$4" dry="$5" force="$6"
+  local src="$1" dst="$2" repo="$3" mode="$4" dry="$5" force="$6" part="$7"
   [[ -d "$src" && -d "$dst" ]] || return 0
 
   _gwt_cp_flags
@@ -124,6 +125,10 @@ function _gwt_carry_over {
     clean="${entry%/}"
     sp="$src/$clean"
     [[ -e "$sp" ]] || continue
+    case "$part" in
+      files) [[ -d "$sp" && ! -L "$sp" ]] && continue ;;
+      dirs)  [[ -d "$sp" && ! -L "$sp" ]] || continue ;;
+    esac
     dp="$dst/$clean"
 
     if [[ ! -e "$dp" ]]; then

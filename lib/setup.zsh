@@ -180,7 +180,7 @@ function _gwt_setup_page {
 # Detached and in its own session: a long install must not die with the terminal that
 # started it, and ctrl-c in a shell that watches it must not reach it either.
 function _gwt_setup_spawn {
-  local main_root="$1" repo="$2" tree="$3" branch="$4" force="$5" d runner
+  local main_root="$1" repo="$2" tree="$3" branch="$4" force="$5" carry="$6" d runner
   runner="$_GWT_ROOT/libexec/gwt-setup-run"
   [[ -x "$runner" ]] || { print -ru2 -- "error: setup runner not found at $runner"; return 51 }
   d="$(_gwt_state_dir "$tree")" || { print -ru2 -- "error: cannot locate the git dir of $tree"; return 51 }
@@ -190,7 +190,7 @@ function _gwt_setup_spawn {
   : > "$d/setup.log" || return 51
   date +%s > "$d/setup.started"
 
-  local -a launch=( "$runner" "$main_root" "$repo" "$tree" "$branch" "$force" )
+  local -a launch=( "$runner" "$main_root" "$repo" "$tree" "$branch" "$force" "$carry" )
   if (( $+commands[setsid] )); then
     launch=( setsid --fork "${launch[@]}" )
   elif (( $+commands[nohup] )); then
@@ -329,16 +329,30 @@ function _gwt_setup_wants_bg {
 # Every path that runs setup on demand comes through here, so the fg/bg choice and
 # the one-run-at-a-time rule are made in one place.
 function _gwt_setup_start {
-  local main_root="$1" repo="$2" tree="$3" branch="$4" force="$5" bg="$6"
+  local main_root="$1" repo="$2" tree="$3" branch="$4" force="$5" bg="$6" carry="$7"
   if _gwt_setup_is_running "$tree"; then
     print -ru2 -- "error: setup is already running in ${tree:t} — 'gwt setup attach' to follow it"
     return 53
   fi
   if _gwt_setup_wants_bg "$main_root" "$repo" "$bg"; then
-    _gwt_setup_spawn "$main_root" "$repo" "$tree" "$branch" "$force"
+    _gwt_setup_spawn "$main_root" "$repo" "$tree" "$branch" "$force" "$carry"
   else
     _gwt_run_setup "$main_root" "$repo" "$tree" "$branch" "$force"
   fi
+}
+
+# Fills a fresh worktree. Even as a reflink, a directory like node_modules takes
+# seconds to copy, so when setup goes to the background the directories go with it.
+function _gwt_populate {
+  local main_root="$1" repo="$2" tree="$3" branch="$4" bg="$5" no_setup="$6"
+  if [[ -z "$no_setup" ]] && _gwt_setup_wants_bg "$main_root" "$repo" "$bg"; then
+    _gwt_carry_over "$main_root" "$tree" "$repo" create "" "" files
+    _gwt_setup_start "$main_root" "$repo" "$tree" "$branch" "" bg dirs
+    return
+  fi
+  _gwt_carry_over "$main_root" "$tree" "$repo" create "" ""
+  [[ -n "$no_setup" ]] && return 0
+  _gwt_setup_start "$main_root" "$repo" "$tree" "$branch" "" "$bg"
 }
 
 function _gwt_setup_cmd {

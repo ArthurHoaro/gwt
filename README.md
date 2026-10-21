@@ -189,6 +189,11 @@ failure. Ctrl-C only detaches you — it never reaches the hook. Attaching after
 has ended replays the log and reports how it went, and `gwt setup status` answers the
 same question in one line.
 
+A background run also takes the carried directories with it. Files like `.env.local`
+are in place before `gwt add` returns, while directories like `node_modules/` (seconds
+to copy even as a reflink) land at the start of the run, before the hook, so the hook
+still finds them. `--fg` and `--no-setup` carry everything up front as before.
+
 The run is in its own session, so it survives the shell — and the terminal — that
 started it. Only one runs per worktree at a time; a second is refused with a pointer
 at the first. Removing a worktree stops a run still writing into it, the same way it

@@ -518,8 +518,7 @@ usage:
       # Local branch exists?
       if git show-ref --verify --quiet "refs/heads/$branch"; then
         git worktree add "$DIR" "$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 10; }
-        _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
-        [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
+        _gwt_populate "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "$bg" "$no_setup" || setup_rc=$?
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 11; }
         return $setup_rc
       fi
@@ -528,8 +527,7 @@ usage:
       if git show-ref --verify --quiet "refs/remotes/$REMOTE/$branch"; then
         git worktree add -b "$branch" "$DIR" "$REMOTE/$branch" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 12; }
         git -C "$DIR" branch --set-upstream-to="$REMOTE/$branch" "$branch" >/dev/null 2>&1 || true
-        _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
-        [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
+        _gwt_populate "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "$bg" "$no_setup" || setup_rc=$?
         cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 13; }
         return $setup_rc
       fi
@@ -545,8 +543,7 @@ usage:
         [[ "$base" == HEAD ]] || print -r -- "note: branching '$branch' off $base" >&2
       fi
       git worktree add "${add_opts[@]}" -b "$branch" "$DIR" "$base" >/dev/null || { print -r -- "error: git worktree add failed" >&2; return 14; }
-      _gwt_carry_over "$MAIN_ROOT" "$DIR" "$REPO" create "" ""
-      [[ -z "$no_setup" ]] && { _gwt_setup_start "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "" "$bg" || setup_rc=$? }
+      _gwt_populate "$MAIN_ROOT" "$REPO" "$DIR" "$branch" "$bg" "$no_setup" || setup_rc=$?
       cd "$DIR" || { print -r -- "error: failed to cd to $DIR" >&2; return 15; }
       return $setup_rc
       ;;
