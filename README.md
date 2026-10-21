@@ -238,6 +238,12 @@ status` says which worktree owns it and whether the port is actually live, `gwt 
 logs -f` follows the journal, and `gwt list` marks the serving worktree with `▶`
 alongside dirty and ahead/behind columns.
 
+The service's `PATH` is the one `install.sh` ran with on Linux, and the one `gwt serve`
+ran with on macOS, so it pins whatever node was active then. When the worktree has a
+`.nvmrc` or `.node-version`, the launcher sources nvm (`$NVM_DIR`, then
+`~/.config/nvm`, then `~/.nvm`) and runs `nvm use` with that version before the server
+command, and refuses to start if nvm is not there.
+
 Logs keep the dev server's colors. A supervised process has no terminal, so most
 tools turn color off: the launcher sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1`.
 Override `FORCE_COLOR`, or `export NO_COLOR=1`, in your `.gwtrc` to change that;

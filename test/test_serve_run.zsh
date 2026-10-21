@@ -62,5 +62,27 @@ write_gwtrc "$repo" 'FORCE_COLOR=3' "GWT_SERVER='print -r -- \"color=\$FORCE_COL
 run_launcher "${repo:t}"
 assert_eq "color=3" "$GWT_OUT" "launcher: the rc can override the forced color level"
 
+write_gwtrc "$repo" "GWT_SERVER='print -r -- \"node=\$FAKE_NODE\"'"
+print -r -- "v24" > "$wt/.nvmrc"
+unset NVM_DIR
+run_launcher "${repo:t}"
+assert_rc 9 "launcher: refuses a pinned node without nvm"
+assert_err_has "pins node v24" "launcher: says which pin it could not honor"
+
+mkdir -p "$HOME/.config/nvm"
+print -r -- 'nvm() { [[ "$1" == use ]] && export FAKE_NODE="$2" }' > "$HOME/.config/nvm/nvm.sh"
+run_launcher "${repo:t}"
+assert_rc 0 "launcher: runs with a pinned node"
+assert_eq "node=v24" "$GWT_OUT" "launcher: switches to the .nvmrc version before the server"
+
+rm "$wt/.nvmrc"
+print -r -- " 22.19.0 " > "$wt/.node-version"
+run_launcher "${repo:t}"
+assert_eq "node=22.19.0" "$GWT_OUT" "launcher: reads .node-version too"
+
+rm "$wt/.node-version"
+run_launcher "${repo:t}"
+assert_eq "node=" "$GWT_OUT" "launcher: leaves node alone without a pin"
+
 cd /
 gwt_test_done

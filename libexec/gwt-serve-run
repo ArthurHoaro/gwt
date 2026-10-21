@@ -48,5 +48,21 @@ GWT_BRANCH="$(git -C "$target" symbolic-ref --quiet --short HEAD 2>/dev/null)" |
 export GWT_BRANCH
 
 cd "$target"
+
+# The unit's PATH is frozen at install time, so a pinned node would otherwise go unused.
+server="$GWT_SERVER"
+node_pin=""
+for f in .nvmrc .node-version; do
+  [[ -f "$f" ]] && { node_pin="${$(<$f)//[[:space:]]/}"; break }
+done
+if [[ -n "$node_pin" ]]; then
+  nvm_sh=""
+  for d in "$NVM_DIR" "${XDG_CONFIG_HOME:-$HOME/.config}/nvm" "$HOME/.nvm"; do
+    [[ -n "$d" && -s "$d/nvm.sh" ]] && { nvm_sh="$d/nvm.sh"; break }
+  done
+  [[ -n "$nvm_sh" ]] || { print -ru2 -- "gwt-serve-run: $target pins node $node_pin but nvm was not found"; exit 9 }
+  server="source ${(q)nvm_sh} && nvm use ${(q)node_pin} >&2 && $GWT_SERVER"
+fi
+
 print -ru2 -- "gwt-serve-run: $repo → $target ($GWT_SERVER)"
-exec zsh -lc "$GWT_SERVER"
+exec zsh -lc "$server"
